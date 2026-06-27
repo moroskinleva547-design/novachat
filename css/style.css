@@ -912,6 +912,17 @@ button {
 .search-add-btn:hover { background: var(--accent-hover); }
 .search-add-btn.added { background: var(--bg-tertiary); color: var(--text-secondary); cursor: default; }
 
+/* Server status */
+.server-status { display: flex; align-items: center; padding: 0 4px; }
+.server-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--text-muted); transition: var(--transition);
+  flex-shrink: 0;
+}
+.server-dot.connected { background: var(--success); box-shadow: 0 0 6px var(--success); }
+.server-dot.disconnected { background: var(--danger); }
+.server-dot.connecting { background: var(--warning); animation: pulse-online 1s ease-in-out infinite; }
+
 /* Call error */
 .call-error {
   color: var(--danger); font-size: 13px;

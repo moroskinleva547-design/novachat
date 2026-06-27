@@ -64,6 +64,9 @@
               <span class="user-status online">В сети</span>
             </div>
           </div>
+          <div class="server-status" id="server-status" title="Статус сервера">
+            <span class="server-dot" id="server-dot"></span>
+          </div>
           <div class="sidebar-actions">
             <button class="icon-btn" id="new-chat-btn" title="Новый чат" data-icon="plus"></button>
             <button class="icon-btn" id="settings-btn" title="Настройки" data-icon="settings"></button>
@@ -236,6 +239,15 @@
             <div class="setting-item" style="flex-direction:column;align-items:flex-start;gap:4px">
               <div class="setting-label">Версия: 2.0.0</div>
               <div class="setting-desc">Современный мессенджер с полным функционалом</div>
+            </div>
+            <div class="setting-item" style="flex-direction:column;align-items:flex-start;gap:6px">
+              <div class="setting-label">Сервер</div>
+              <div class="setting-desc">Адрес WebSocket сервера для подключения</div>
+              <div style="display:flex;gap:8px;width:100%;margin-top:4px">
+                <input class="setting-input" id="server-url-input" type="text" style="flex:1" placeholder="ws://localhost:3001">
+                <button class="search-add-btn" id="server-url-btn">Подключиться</button>
+              </div>
+              <div class="setting-desc" id="server-status-text" style="margin-top:2px">Статус: проверка...</div>
             </div>
             <div class="setting-item" style="flex-direction:column;align-items:flex-start;gap:4px">
               <div class="setting-label">Функции:</div>

@@ -81,6 +81,10 @@
   const rememberCheckbox = $('remember-checkbox');
   const authNotif = $('auth-notif');
   const authNotifText = $('auth-notif-text');
+  const serverDot = $('server-dot');
+  const serverUrlInput = $('server-url-input');
+  const serverUrlBtn = $('server-url-btn');
+  const serverStatusText = $('server-status-text');
 
   // ===== TOAST =====
   function showToast(msg, type) {
@@ -731,6 +735,33 @@
     callVideoToggleBtn.innerHTML = ''; callVideoToggleBtn.appendChild(Icons.create(icon, 24));
   });
 
+  // ===== SERVER STATUS =====
+  function setServerStatus(state) {
+    if (!serverDot) return;
+    serverDot.className = 'server-dot ' + state;
+    if (serverStatusText) {
+      const labels = { connected: 'Подключено', disconnected: 'Нет соединения', connecting: 'Подключение...' };
+      serverStatusText.textContent = 'Статус: ' + (labels[state] || state);
+    }
+  }
+
+  setServerStatus('connecting');
+
+  if (serverUrlInput) serverUrlInput.value = DB._serverUrl;
+
+  if (serverUrlBtn) {
+    serverUrlBtn.addEventListener('click', () => {
+      const url = serverUrlInput.value.trim();
+      if (url) {
+        DB.disconnect();
+        DB.setServerUrl(url);
+        setServerStatus('connecting');
+        DB.connect();
+        showToast('Подключение к ' + url, 'info');
+      }
+    });
+  }
+
   // ===== INIT =====
   Icons.apply();
 
@@ -760,8 +791,8 @@
 
   // Connection status indicator
   DB.onMessage((data) => {
-    if (data.type === '_connected') showToast('Подключено к серверу', 'success');
-    if (data.type === '_disconnected') showToast('Потеряно соединение с сервером', 'error');
+    if (data.type === '_connected') { setServerStatus('connected'); showToast('Подключено к серверу', 'success'); }
+    if (data.type === '_disconnected') { setServerStatus('disconnected'); showToast('Потеряно соединение с сервером', 'error'); }
   });
 
   console.log('✦ NovaChat v2.0 — Server mode ✦');
