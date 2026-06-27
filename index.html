@@ -40,12 +40,39 @@
           <p class="auth-error" id="login-error"></p>
         </form>
         <form id="register-form" class="auth-form">
-          <div class="form-group"><input type="text" id="reg-name" placeholder="Имя пользователя" required></div>
-          <div class="form-group"><input type="text" id="reg-login" placeholder="Логин" required></div>
-          <div class="form-group"><input type="email" id="reg-email" placeholder="Email" required></div>
-          <div class="form-group"><input type="password" id="reg-password" placeholder="Пароль (мин. 6 символов)" required></div>
-          <div class="form-group"><input type="password" id="reg-confirm" placeholder="Подтвердите пароль" required></div>
-          <button type="submit" class="auth-btn">Зарегистрироваться</button>
+          <div class="floating-group">
+            <input type="text" id="reg-name" class="floating-input" placeholder=" " required autocomplete="off">
+            <label for="reg-name" class="floating-label">Имя пользователя</label>
+            <span class="input-valid" id="valid-name"></span>
+          </div>
+          <div class="floating-group">
+            <input type="text" id="reg-login" class="floating-input" placeholder=" " required autocomplete="off">
+            <label for="reg-login" class="floating-label">Логин</label>
+            <span class="input-valid" id="valid-login"></span>
+          </div>
+          <div class="floating-group">
+            <input type="email" id="reg-email" class="floating-input" placeholder=" " required autocomplete="off">
+            <label for="reg-email" class="floating-label">Email</label>
+            <span class="input-valid" id="valid-email"></span>
+          </div>
+          <div class="floating-group">
+            <input type="password" id="reg-password" class="floating-input" placeholder=" " required autocomplete="off">
+            <label for="reg-password" class="floating-label">Пароль</label>
+            <span class="input-valid" id="valid-password"></span>
+            <div class="password-strength hidden" id="password-strength">
+              <div class="strength-bar" id="strength-bar"></div>
+              <span class="strength-text" id="strength-text"></span>
+            </div>
+          </div>
+          <div class="floating-group">
+            <input type="password" id="reg-confirm" class="floating-input" placeholder=" " required autocomplete="off">
+            <label for="reg-confirm" class="floating-label">Подтвердите пароль</label>
+            <span class="input-valid" id="valid-confirm"></span>
+          </div>
+          <button type="submit" class="auth-btn register-btn" id="register-btn">
+            <span class="btn-text">Зарегистрироваться</span>
+            <span class="btn-loader hidden">⟳</span>
+          </button>
           <p class="auth-error" id="register-error"></p>
         </form>
       </div>

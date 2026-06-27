@@ -157,18 +157,98 @@
   });
 
   // ===== REGISTER =====
+  const regName = $('reg-name');
+  const regLogin = $('reg-login');
+  const regEmail = $('reg-email');
+  const regPassword = $('reg-password');
+  const regConfirm = $('reg-confirm');
+  const regBtn = $('register-btn');
+  const strengthBar = $('strength-bar');
+  const strengthText = $('strength-text');
+  const strengthSection = $('password-strength');
+
+  function setValid(el, state) {
+    const icon = el.parentElement.querySelector('.input-valid');
+    if (!icon) return;
+    el.classList.remove('input-error', 'input-valid');
+    icon.classList.remove('show', 'ok', 'fail', 'loading');
+    if (state === 'ok') { el.classList.add('input-valid'); icon.classList.add('show', 'ok'); icon.textContent = '✓'; }
+    else if (state === 'fail') { el.classList.add('input-error'); icon.classList.add('show', 'fail'); icon.textContent = '✕'; }
+    else if (state === 'loading') { icon.classList.add('show', 'loading'); icon.textContent = '⟳'; }
+    else { icon.classList.remove('show'); }
+  }
+
+  function getPasswordStrength(pass) {
+    let score = 0;
+    if (pass.length >= 6) score += 20;
+    if (pass.length >= 8) score += 15;
+    if (pass.length >= 12) score += 15;
+    if (/[a-z]/.test(pass)) score += 10;
+    if (/[A-Z]/.test(pass)) score += 15;
+    if (/[0-9]/.test(pass)) score += 15;
+    if (/[^a-zA-Z0-9]/.test(pass)) score += 10;
+    return Math.min(score, 100);
+  }
+
+  function updateStrength() {
+    const pass = regPassword.value;
+    if (!pass) { strengthSection.classList.add('hidden'); return; }
+    strengthSection.classList.remove('hidden');
+    const score = getPasswordStrength(pass);
+    const colors = ['#f85149','#f85149','#d29922','#d29922','#3fb950','#3fb950'];
+    const labels = ['очень слабый','слабый','средний','хороший','сильный','очень сильный'];
+    const idx = Math.min(Math.floor(score / 20), 5);
+    strengthBar.style.setProperty('--strength', score + '%');
+    strengthBar.style.setProperty('--strength-color', colors[idx]);
+    strengthText.textContent = labels[idx];
+    strengthText.style.color = colors[idx];
+  }
+
+  // Live validation
+  regName.addEventListener('input', () => {
+    setValid(regName, regName.value.length >= 2 ? 'ok' : regName.value.length > 0 ? 'fail' : null);
+  });
+  regLogin.addEventListener('input', () => {
+    const v = regLogin.value;
+    if (v.length < 3 && v.length > 0) setValid(regLogin, 'fail');
+    else if (v.length >= 3) setValid(regLogin, 'ok');
+    else setValid(regLogin, null);
+  });
+  regEmail.addEventListener('input', () => {
+    const v = regEmail.value;
+    setValid(regEmail, /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) ? 'ok' : v.length > 0 ? 'fail' : null);
+  });
+  regPassword.addEventListener('input', () => {
+    updateStrength();
+    setValid(regPassword, regPassword.value.length >= 6 ? 'ok' : regPassword.value.length > 0 ? 'fail' : null);
+    if (regConfirm.value) {
+      setValid(regConfirm, regConfirm.value === regPassword.value ? 'ok' : 'fail');
+    }
+  });
+  regConfirm.addEventListener('input', () => {
+    setValid(regConfirm, regConfirm.value === regPassword.value && regConfirm.value.length > 0 ? 'ok' : regConfirm.value.length > 0 ? 'fail' : null);
+  });
+
   registerForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const name = $('reg-name').value.trim();
-    const login = $('reg-login').value.trim();
-    const email = $('reg-email').value.trim();
-    const password = $('reg-password').value;
-    const confirm = $('reg-confirm').value;
+    const name = regName.value.trim();
+    const login = regLogin.value.trim();
+    const email = regEmail.value.trim();
+    const password = regPassword.value;
+    const confirm = regConfirm.value;
 
     clearAuthNotif();
+
+    if (!name || name.length < 2) { showAuthNotif('Имя должно быть минимум 2 символа'); return; }
+    if (!login || login.length < 3) { showAuthNotif('Логин должен быть минимум 3 символа'); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showAuthNotif('Введите корректный email'); return; }
+    if (password.length < 6) { showAuthNotif('Пароль должен быть минимум 6 символов'); return; }
     if (password !== confirm) { showAuthNotif('Пароли не совпадают'); return; }
 
+    regBtn.classList.add('loading');
     const result = await Auth.register(name, login, email, password);
+    regBtn.classList.remove('loading');
+
     if (result.success) {
       showAuthNotif('Регистрация успешна! Теперь войдите.');
       document.querySelector('[data-tab="login"]').click();
