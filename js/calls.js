@@ -85,7 +85,7 @@ const Calls = {
       });
       await this._peerConnection.setLocalDescription(offer);
 
-      DB.sendSignal({
+      DB.send({
         type: 'call-offer',
         from: Auth.getCurrentUser().login,
         fromName: Auth.getCurrentUser().name,
@@ -144,14 +144,14 @@ const Calls = {
       const answer = await this._peerConnection.createAnswer();
       await this._peerConnection.setLocalDescription(answer);
 
-      DB.sendSignal({
+      DB.send({
         type: 'call-answer',
         from: Auth.getCurrentUser().login,
         to: this._pendingOffer.from,
         sdp: answer
       });
 
-      DB.sendSignal({
+      DB.send({
         type: 'call-accept',
         from: Auth.getCurrentUser().login,
         to: this._currentCallWith
@@ -169,7 +169,7 @@ const Calls = {
   },
 
   declineCall() {
-    DB.sendSignal({
+    DB.send({
       type: 'call-decline',
       from: Auth.getCurrentUser().login,
       to: this._currentCallWith
@@ -184,7 +184,7 @@ const Calls = {
 
     clearTimeout(this._callTimeout);
 
-    DB.sendSignal({
+    DB.send({
       type: 'call-end',
       from: Auth.getCurrentUser().login,
       to: this._currentCallWith
@@ -254,7 +254,7 @@ const Calls = {
 
     this._peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
-        DB.sendSignal({
+        DB.send({
           type: 'call-ice-candidate',
           from: Auth.getCurrentUser().login,
           to: this._currentCallWith,
