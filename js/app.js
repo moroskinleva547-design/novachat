@@ -20,7 +20,7 @@ const SETTINGS_DEFAULTS = {
   sidebar: true, language: 'ru', autoStart: true
 };
 
-const PRESET_USERS = [
+const USER_DIRECTORY = [
   { name: 'Алиса', login: 'alisa_star' },
   { name: 'Максим', login: 'max_dev' },
   { name: 'София', login: 'sofi_light' },
@@ -28,7 +28,11 @@ const PRESET_USERS = [
   { name: 'Елена', login: 'elena_design' },
   { name: 'Артём', login: 'artem_music' },
   { name: 'Полина', login: 'polina_art' },
-  { name: 'Иван', login: 'ivan_wave' }
+  { name: 'Иван', login: 'ivan_wave' },
+  { name: 'Кира', login: 'kira_neo' },
+  { name: 'Тимур', login: 'timur_dev' },
+  { name: 'Вера', login: 'vera_codes' },
+  { name: 'Олег', login: 'oleg_art' }
 ];
 
 const $ = id => document.getElementById(id);
@@ -99,10 +103,72 @@ function generateId() {
 
 // ======================== ХРАНИЛИЩЕ ========================
 function saveAll() {
-  localStorage.setItem('neonchat_data', JSON.stringify({
-    user: state.user, chats: state.chats, messages: state.messages
+  try {
+    localStorage.setItem('neonchat_data', JSON.stringify({
+      user: state.user, chats: state.chats, messages: state.messages
+    }));
+  } catch (e) {
+    console.warn('localStorage quota exceeded, cleaning up old voice messages...');
+    // Clean up old voice messages to free space
+    for (const key of Object.keys(state.messages)) {
+      state.messages[key] = state.messages[key].filter(m => m.type !== 'voice');
+    }
+    try {
+      localStorage.setItem('neonchat_data', JSON.stringify({
+        user: state.user, chats: state.chats, messages: state.messages
+      }));
+      toast('Старые голосовые удалены для освобождения места', 'info');
+    } catch { toast('Ошибка сохранения', 'error'); }
+  }
+}
+
+// ===== IndexedDB для голосовых =====
+const IDB_NAME = 'neonchat_audio';
+const IDB_VERSION = 1;
+
+function idbOpen() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, IDB_VERSION);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains('blobs')) {
+        db.createObjectStore('blobs', { keyPath: 'id' });
+      }
+    };
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+function idbPut(id, data) {
+  return idbOpen().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction('blobs', 'readwrite');
+    tx.objectStore('blobs').put({ id, data });
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = e => { db.close(); reject(e.target.error); };
   }));
 }
+
+function idbGet(id) {
+  return idbOpen().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction('blobs', 'readonly');
+    const req = tx.objectStore('blobs').get(id);
+    req.onsuccess = e => { db.close(); resolve(e.target.result?.data); };
+    req.onerror = e => { db.close(); reject(e.target.error); };
+  }));
+}
+
+function idbDelete(id) {
+  return idbOpen().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction('blobs', 'readwrite');
+    tx.objectStore('blobs').delete(id);
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = e => { db.close(); reject(e.target.error); };
+  }));
+}
+
+let _audioIdCounter = 0;
+function nextAudioId() { return 'audio_' + Date.now() + '_' + (++_audioIdCounter); }
 
 function loadAll() {
   try {
@@ -175,14 +241,11 @@ function handleRegister(e) {
   }
 
   state.user = { name, login, email, _pw: btoa(password), created: Date.now() };
-  state.chats = PRESET_USERS.map(u => ({
-    with: u.login, name: u.name, avatar: getInitials(u.name),
-    lastMessage: '', lastTime: '', online: Math.random() > 0.5
-  }));
+  state.chats = [];
   state.messages = {};
   saveAll();
   saveSession(state.user, true);
-  toast('Аккаунт создан!', 'success');
+  toast('Аккаунт создан! Теперь найдите собеседника через Новый чат', 'success');
   enterApp();
 }
 
@@ -395,7 +458,7 @@ async function startVoiceRecording() {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     const mt = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
-    state.mediaRecorder = new MediaRecorder(stream, { mimeType: mt });
+    state.mediaRecorder = new MediaRecorder(stream, { mimeType: mt, audioBitsPerSecond: 16000 });
     state.audioChunks = []; state.recordingSeconds = 0; state.isRecording = true;
     dom.voiceBtn.classList.add('recording');
     dom.voiceIcon.style.display = 'none';
@@ -406,7 +469,7 @@ async function startVoiceRecording() {
       dom.voiceTimer.textContent = formatDuration(state.recordingSeconds);
     }, 1000);
     state.mediaRecorder.ondataavailable = e => { if (e.data.size > 0) state.audioChunks.push(e.data); };
-    state.mediaRecorder.onstop = () => {
+    state.mediaRecorder.onstop = async () => {
       clearInterval(state.recordingTimer);
       dom.voiceBtn.classList.remove('recording');
       dom.voiceIcon.style.display = '';
@@ -415,17 +478,21 @@ async function startVoiceRecording() {
       const blob = new Blob(state.audioChunks, { type: 'audio/webm' });
       const dur = state.recordingSeconds;
       if (dur < 1) { toast('Слишком короткая запись', 'error'); return; }
-      const reader = new FileReader();
-      reader.onload = e => {
+      // Store in IndexedDB
+      const audioId = nextAudioId();
+      try {
+        await idbPut(audioId, blob);
         dom.recordBtn.style.display = 'flex';
         dom.sendBtn.style.display = 'none';
         dom.chatInput.textContent = '';
         dom.chatInput.style.display = 'none';
-        dom.recordBtn.dataset.blob = e.target.result;
+        dom.recordBtn.dataset.audioId = audioId;
         dom.recordBtn.dataset.dur = dur;
-        toast(`Запись ${formatDuration(dur)} готова`, 'info');
-      };
-      reader.readAsDataURL(blob);
+        toast(`Запись ${formatDuration(dur)} готова к отправке`, 'success');
+      } catch (e) {
+        toast('Ошибка сохранения аудио', 'error');
+        console.error(e);
+      }
     };
     state.mediaRecorder.start();
   } catch { toast('Нет доступа к микрофону', 'error'); }
@@ -442,12 +509,12 @@ function cancelVoiceMode() {
   dom.chatInput.style.display = 'block';
 }
 
-function sendVoiceMessage() {
-  const b64 = dom.recordBtn.dataset.blob;
+async function sendVoiceMessage() {
+  const audioId = dom.recordBtn.dataset.audioId;
   const dur = parseInt(dom.recordBtn.dataset.dur) || 0;
-  if (!b64 || dur < 1 || !state.currentChat) return;
+  if (!audioId || dur < 1 || !state.currentChat) return;
   addMessage({
-    type: 'voice', audioData: b64, duration: dur,
+    type: 'voice', audioId, duration: dur,
     from: state.user.login, to: state.currentChat, time: Date.now(),
     formattedTime: formatTime(Date.now())
   });
@@ -484,12 +551,22 @@ function renderMessages(chatWith) {
       const pb = document.createElement('button');
       pb.className = 'voice-play-btn';
       pb.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16"><polygon points="8,5 19,12 8,19" fill="currentColor"/></svg>';
-      let playing = false; let audio = null;
-      pb.addEventListener('click', () => {
+      let playing = false; let audio = null; let loading = false;
+      pb.addEventListener('click', async () => {
         if (playing && audio) { audio.pause(); audio.currentTime = 0; playing = false; return; }
-        playing = true; audio = new Audio(msg.audioData);
+        if (loading) return;
+        if (!audio) {
+          loading = true;
+          pb.style.opacity = '0.5';
+          try {
+            const blob = await idbGet(msg.audioId);
+            if (!blob) { toast('Аудио не найдено', 'error'); loading = false; pb.style.opacity = '1'; return; }
+            audio = new Audio(URL.createObjectURL(blob));
+          } catch { toast('Ошибка загрузки аудио', 'error'); loading = false; pb.style.opacity = '1'; return; }
+          loading = false; pb.style.opacity = '1';
+        }
+        playing = true; audio.play();
         audio.onended = () => { playing = false; };
-        audio.play();
       });
       const wave = document.createElement('div'); wave.className = 'voice-wave';
       for (let i = 0; i < 8; i++) { const b = document.createElement('span'); b.style.height = `${6 + Math.random() * 18}px`; wave.appendChild(b); }
@@ -609,7 +686,7 @@ function closeNewChatModal() { dom.newChatModal.style.display = 'none'; }
 function searchUsers(query) {
   const q = query.toLowerCase();
   const all = [
-    ...PRESET_USERS,
+    ...USER_DIRECTORY,
     ...(state.chats?.map(c => ({ name: c.name, login: c.with })) || [])
   ];
   const seen = new Set();
@@ -751,6 +828,27 @@ function setupEvents() {
     if (!state.currentChat) { toast('Выберите чат', 'info'); return; }
     toast('Звонок (WebRTC) — требуется сервер', 'info');
   });
+}
+
+// Clean up orphaned audio blobs on startup
+async function cleanupAudioBlobs() {
+  try {
+    const usedIds = new Set();
+    for (const msgs of Object.values(state.messages)) {
+      for (const m of msgs) { if (m.type === 'voice' && m.audioId) usedIds.add(m.audioId); }
+    }
+    const db = await idbOpen();
+    const tx = db.transaction('blobs', 'readonly');
+    const req = tx.objectStore('blobs').getAllKeys();
+    req.onsuccess = async () => {
+      const keys = req.result || [];
+      for (const key of keys) {
+        if (!usedIds.has(key)) { try { await idbDelete(key); } catch {} }
+      }
+      db.close();
+    };
+    req.onerror = () => db.close();
+  } catch {}
 }
 
 function init() {
