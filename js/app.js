@@ -70,6 +70,8 @@
   const voiceTimer = $('voice-timer');
   const voiceSendBtn = $('voice-send-btn');
   const voiceCancelBtn = $('voice-cancel-btn');
+  const authNotif = $('auth-notif');
+  const authNotifText = $('auth-notif-text');
   const userInfo = $('user-info');
   const sidebar = $('sidebar');
   const mobileBackBtn = $('mobile-back-btn');
@@ -113,6 +115,39 @@
     } catch(e) {}
   }
 
+  // ===== AUTH NOTIFICATION =====
+  let notifTimer = null;
+
+  function showAuthNotif(msg) {
+    if (!authNotif) return;
+    clearTimeout(notifTimer);
+    authNotif.classList.remove('leaving', 'hidden');
+    authNotifText.textContent = msg;
+    // Reset animation by reflow
+    void authNotif.offsetWidth;
+    authNotif.style.animation = 'none';
+    void authNotif.offsetWidth;
+    authNotif.style.animation = '';
+    // Auto-dismiss after 4s with graceful exit
+    notifTimer = setTimeout(() => {
+      authNotif.classList.add('leaving');
+      setTimeout(() => { authNotif.classList.add('hidden'); authNotif.classList.remove('leaving'); }, 350);
+    }, 4000);
+  }
+
+  function clearAuthNotif() {
+    clearTimeout(notifTimer);
+    authNotif.classList.add('hidden');
+    authNotif.classList.remove('leaving');
+  }
+
+  // Close notif on click
+  if (authNotif) authNotif.addEventListener('click', () => {
+    authNotif.classList.add('leaving');
+    setTimeout(() => { authNotif.classList.add('hidden'); authNotif.classList.remove('leaving'); }, 350);
+    clearTimeout(notifTimer);
+  });
+
   // ===== AUTH TABS =====
   document.querySelectorAll('.auth-tab').forEach(tab => {
     tab.addEventListener('click', () => {
@@ -122,6 +157,7 @@
       document.getElementById(tab.dataset.tab + '-form').classList.add('active');
       loginError.textContent = '';
       registerError.textContent = '';
+      clearAuthNotif();
     });
   });
 
@@ -134,21 +170,20 @@
     const password = $('reg-password').value;
     const confirm = $('reg-confirm').value;
 
+    clearAuthNotif();
+
     if (password !== confirm) {
-      registerError.textContent = 'Пароли не совпадают';
+      showAuthNotif('Пароли не совпадают');
       return;
     }
 
     const result = Auth.register(name, login, email, password);
     if (result.success) {
-      registerError.textContent = '';
-      registerError.style.color = 'var(--success)';
-      registerError.textContent = '✅ Регистрация успешна! Войдите.';
+      showAuthNotif('Регистрация успешна! Теперь войдите.');
       document.querySelector('[data-tab="login"]').click();
       $('login-email').value = login;
-      showToast('Регистрация успешна!', 'success');
     } else {
-      registerError.textContent = result.error;
+      showAuthNotif(result.error);
     }
   });
 
