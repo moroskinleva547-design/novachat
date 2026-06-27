@@ -19,9 +19,6 @@ const Auth = {
   setUser(user, rememberMe) {
     this._currentUser = user;
     this._rememberMe = !!rememberMe;
-    if (user) {
-      DB.saveSession(user.login, !!rememberMe);
-    }
     if (this._onChange) this._onChange(user);
   },
 
@@ -47,7 +44,7 @@ const Auth = {
     if (result.success) {
       this._currentUser = result.user;
       this._rememberMe = !!rememberMe;
-      DB.saveSession(result.user.login, !!rememberMe);
+      DB.saveSession(result.user.login, !!rememberMe, password);
     }
     return result;
   },

@@ -765,25 +765,19 @@
   // ===== INIT =====
   Icons.apply();
 
-  // Check session
-  const savedLogin = Auth.init();
-  if (savedLogin) {
+  // Restore session on page load
+  const sessionData = Auth.init();
+  if (sessionData && sessionData.login && sessionData.password) {
     showToast('Восстановление сессии...', 'info');
-    // Try to re-login using stored credentials
-    const sessionData = localStorage.getItem('novachat_session');
-    if (sessionData) {
-      try {
-        const parsed = JSON.parse(sessionData);
-        if (parsed.password) {
-          Auth.login(parsed.login, parsed.password, true).then(result => {
-            if (result.success) {
-              currentUser = Auth.getCurrentUser();
-              enterApp();
-            } else { showAuthNotif('Сессия истекла, войдите заново'); }
-          });
-        }
-      } catch {}
-    }
+    Auth.login(sessionData.login, sessionData.password, !!sessionData.expires).then(result => {
+      if (result.success) {
+        currentUser = Auth.getCurrentUser();
+        enterApp();
+      } else {
+        showToast('Сессия истекла, войдите заново', 'error');
+        DB.clearSession();
+      }
+    });
   }
 
   initSettings();

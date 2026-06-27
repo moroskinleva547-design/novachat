@@ -153,12 +153,15 @@ const DB = {
   },
 
   // ===== SESSION =====
-  saveSession(login, remember) {
+  _savedPasswords: {},
+
+  saveSession(login, remember, password) {
     if (remember) {
-      this._lsSet('session', { login, expires: Date.now() + 30 * 24 * 60 * 60 * 1000 });
+      this._lsSet('session', { login, password, expires: Date.now() + 30 * 24 * 60 * 60 * 1000 });
       sessionStorage.removeItem(this._lsPrefix + 'session');
     } else {
-      sessionStorage.setItem(this._lsPrefix + 'session', login);
+      const data = JSON.stringify({ login, password });
+      sessionStorage.setItem(this._lsPrefix + 'session', data);
       this._lsRemove('session');
     }
   },
@@ -166,10 +169,15 @@ const DB = {
   getSession() {
     // Try session first
     let s = sessionStorage.getItem(this._lsPrefix + 'session');
-    if (s) return s;
-    // Try persistent
+    if (s) {
+      try {
+        const parsed = JSON.parse(s);
+        if (parsed.login && parsed.password) return parsed;
+      } catch { return s; } // old format fallback
+    }
+    // Try persistent (remember me)
     s = this._lsGet('session');
-    if (s && s.expires > Date.now()) return s.login;
+    if (s && s.expires > Date.now() && s.password) return s;
     return null;
   },
 
@@ -284,6 +292,13 @@ const DB = {
     DB.send(data);
   }
 };
+
+// Ping every 25s to keep connection alive
+setInterval(() => {
+  if (DB.ws && DB.ws.readyState === WebSocket.OPEN) {
+    DB.ws.send(JSON.stringify({ type: 'ping' }));
+  }
+}, 25000);
 
 // Auto-connect on load
 DB.connect();
