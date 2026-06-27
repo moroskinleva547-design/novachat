@@ -6,6 +6,7 @@ const DB = {
   _reconnectTimer: null,
   _reconnectAttempts: 0,
   _sessionId: null,
+  _users: {},
 
   // Auto-detect server URL or use localStorage override
   _serverUrl: (function() {
@@ -44,6 +45,19 @@ const DB = {
       this.ws.onmessage = (e) => {
         let data;
         try { data = JSON.parse(e.data); } catch { return; }
+        // Cache user data from users-list responses
+        if (data.type === 'users-list' && data.users) {
+          data.users.forEach(u => { this._users[u.login] = u; });
+        }
+        if (data.type === 'search-res' && data.results) {
+          data.results.forEach(u => { this._users[u.login] = u; });
+        }
+        if (data.type === 'chats-list' && data.chats) {
+          data.chats.forEach(c => { this._users[c.with] = { login: c.with, name: c.name, avatar: c.avatar, online: c.online }; });
+        }
+        if (data.type === 'chat-update') {
+          this._users[data.with] = { login: data.with, name: data.name, avatar: data.avatar, online: data.online };
+        }
         this._fire(data);
       };
 
@@ -285,6 +299,11 @@ const DB = {
 
   sendMessage(to, text, type, audioData, duration) {
     DB.send({ type: 'send-msg', to, text, type, audioData, duration });
+  },
+
+  // ===== USER CACHE =====
+  getUser(login) {
+    return this._users[login] || null;
   },
 
   // ===== CALL SIGNALING =====

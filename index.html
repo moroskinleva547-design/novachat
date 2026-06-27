@@ -10,6 +10,7 @@
   <div id="app">
     <!-- ===== AUTH ===== -->
     <div id="auth-screen">
+      <div class="auth-scroll">
       <div class="auth-container">
         <div class="auth-logo">
           <div class="logo-icon" data-icon="logo" data-icon-size="42"></div>
@@ -76,6 +77,7 @@
           <p class="auth-error" id="register-error"></p>
         </form>
       </div>
+      </div>
     </div>
 
     <!-- ===== MAIN ===== -->
@@ -105,20 +107,22 @@
           <input type="text" id="search-input" placeholder="Поиск пользователей...">
         </div>
 
-        <div class="chats-list" id="chats-list">
-          <div class="chats-header">
-            <span>Чаты</span>
-            <button class="icon-btn small" id="refresh-chats" title="Обновить" data-icon="refresh"></button>
+        <div class="sidebar-content" id="sidebar-content">
+          <div class="chats-list" id="chats-list">
+            <div class="chats-header">
+              <span>Чаты</span>
+              <button class="icon-btn small" id="refresh-chats" title="Обновить" data-icon="refresh"></button>
+            </div>
+            <div id="chats-container"></div>
           </div>
-          <div id="chats-container"></div>
-        </div>
 
-        <div class="search-results hidden" id="search-results">
-          <div class="search-header">
-            <span>Результаты поиска</span>
-            <button class="icon-btn small" id="close-search" data-icon="close"></button>
+          <div class="search-results hidden" id="search-results">
+            <div class="search-header">
+              <span>Результаты поиска</span>
+              <button class="icon-btn small" id="close-search" data-icon="close"></button>
+            </div>
+            <div id="search-container"></div>
           </div>
-          <div id="search-container"></div>
         </div>
       </div>
 

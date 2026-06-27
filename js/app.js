@@ -401,14 +401,13 @@
   // ===== OPEN CHAT =====
   async function openChat(withLogin) {
     currentChat = withLogin;
-    DB.send({ type: 'get-user', login: withLogin });
-    // Get user info from a temp mechanism
-    const user = { name: withLogin, avatar: withLogin.charAt(0).toUpperCase(), online: false };
+    const cached = DB.getUser(withLogin);
+    const user = cached || { name: withLogin, avatar: withLogin.charAt(0).toUpperCase(), online: false };
     chatUsername.textContent = user.name;
     chatAvatar.textContent = user.avatar;
     chatAvatar.style.background = `linear-gradient(135deg, ${getAvatarColor(withLogin)}, ${getAvatarColor2(withLogin)})`;
-    chatUserStatus.textContent = 'загрузка...';
-    chatUserStatus.style.color = 'var(--text-muted)';
+    chatUserStatus.textContent = user.online ? 'в сети' : 'не в сети';
+    chatUserStatus.style.color = user.online ? 'var(--success)' : 'var(--text-muted)';
     welcomeScreen.classList.add('hidden');
     chatScreen.classList.remove('hidden');
     messageInput.focus();
@@ -453,13 +452,14 @@
     });
 
     messagesList.querySelectorAll('.audio-play-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const audioEl = document.getElementById('audio-' + btn.dataset.audioId);
-        if (audioEl) {
+      const audioEl = document.getElementById('audio-' + btn.dataset.audioId);
+      if (audioEl) {
+        btn.addEventListener('click', () => {
           if (audioEl.paused) { audioEl.play(); btn.innerHTML = ''; btn.appendChild(Icons.create('pause', 16)); }
           else { audioEl.pause(); btn.innerHTML = ''; btn.appendChild(Icons.create('play', 16)); }
-        }
-      });
+        });
+        audioEl.addEventListener('ended', () => { btn.innerHTML = ''; btn.appendChild(Icons.create('play', 16)); });
+      }
     });
   }
 
@@ -546,7 +546,7 @@
   });
 
   closeSearch.addEventListener('click', () => { searchResults.classList.add('hidden'); searchInput.value = ''; });
-  newChatBtn.addEventListener('click', () => { searchInput.focus(); searchInput.value = ''; searchResults.classList.remove('hidden'); DB.searchUsers('').then(r => { /* noop */ }); });
+  newChatBtn.addEventListener('click', () => { searchInput.value = ''; searchResults.classList.remove('hidden'); searchContainer.innerHTML = '<div class="empty-state"><div class="empty-state-text">Начните вводить имя или @логин для поиска</div></div>'; searchInput.focus(); });
   refreshChats.addEventListener('click', loadChatsList);
 
   // ===== EMOJI PICKER =====
@@ -861,7 +861,6 @@
   }
 
   initSettings();
-  Calls.init(() => {}, () => {});
 
   // Connection status indicator
   DB.onMessage((data) => {

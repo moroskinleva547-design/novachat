@@ -63,9 +63,13 @@ button {
   justify-content: center;
   min-height: 100vh;
   background: linear-gradient(135deg, #0d1117 0%, #161b22 50%, #0d1117 100%);
-  padding: 20px;
   animation: fadeIn 0.5s ease;
   position: relative; overflow: hidden;
+}
+#auth-screen .auth-scroll {
+  width: 100%; padding: 20px;
+  overflow-y: auto; max-height: 100vh;
+  display: flex; justify-content: center;
 }
 #auth-screen::before {
   content: ''; position: absolute;
@@ -123,7 +127,7 @@ button {
   color: var(--text-secondary); transition: var(--transition);
 }
 .auth-tab.active { background: var(--accent); color: white; }
-.auth-form { display: none; flex-direction: column; gap: 14px; }
+.auth-form { display: none; flex-direction: column; gap: 10px; }
 .auth-form.active { display: flex; animation: fadeIn 0.3s ease; }
 
 .form-group input {
@@ -168,7 +172,7 @@ button {
   color: #fbbf24;
   font-size: 13px;
   transform-origin: top center;
-  animation: notifSlideIn 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  animation: notifSlideIn 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
   overflow: hidden;
   position: relative;
 }
@@ -202,7 +206,7 @@ button {
 
 /* ===== FLOATING LABEL INPUTS ===== */
 .floating-group {
-  position: relative; margin-bottom: 4px;
+  position: relative; margin-bottom: 2px;
 }
 .floating-input {
   width: 100%; padding: 18px 16px 6px;
@@ -243,10 +247,10 @@ button {
   color: var(--success);
 }
 .input-valid {
-  position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
-  font-size: 14px; opacity: 0; transition: var(--transition);
+  position: absolute; right: 12px; top: 50%; transform: translateY(-50%) scale(0.5);
+  font-size: 14px; opacity: 0; transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
-.input-valid.show { opacity: 1; }
+.input-valid.show { opacity: 1; transform: translateY(-50%) scale(1); }
 .input-valid.ok { color: var(--success); }
 .input-valid.fail { color: var(--danger); }
 .input-valid.loading { color: var(--text-muted); animation: spin 0.8s linear infinite; }
@@ -356,6 +360,7 @@ button {
   width: 320px; min-width: 320px;
   background: var(--bg-secondary); border-right: 1px solid var(--border);
   display: flex; flex-direction: column; height: 100vh;
+  position: relative;
   animation: slideFromLeft 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -401,9 +406,24 @@ button {
 }
 .search-box input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-light); }
 
-.chats-list, .search-results {
+.sidebar-content {
+  flex: 1; overflow: hidden; position: relative; display: flex; flex-direction: column;
+}
+
+.chats-list {
   flex: 1; overflow-y: auto; display: flex; flex-direction: column;
 }
+
+.search-results {
+  display: flex; flex-direction: column;
+  position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+  background: var(--bg-secondary);
+  z-index: 10;
+  overflow-y: auto;
+  animation: fadeIn 0.15s ease;
+}
+.search-results.hidden { display: none !important; }
+
 .chats-header, .search-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px 16px 8px; font-size: 12px; font-weight: 600;
