@@ -1,10 +1,10 @@
 /* ============================================================
-   NeonChat — Main App (Integrates with NovaChat server)
+   NeonChat — Main App (localStorage mode for GitHub Pages)
    ============================================================ */
 
-// ======================== СОСТОЯНИЕ ========================
 const state = {
-  user: null, chats: [], currentChat: null, messages: {},
+  user: null, chats: [], messages: {},
+  currentChat: null,
   isRecording: false, mediaRecorder: null, audioChunks: [],
   recordingTimer: null, recordingSeconds: 0,
   onlineUsers: new Set(),
@@ -20,7 +20,17 @@ const SETTINGS_DEFAULTS = {
   sidebar: true, language: 'ru', autoStart: true
 };
 
-// DOM refs
+const PRESET_USERS = [
+  { name: 'Алиса', login: 'alisa_star' },
+  { name: 'Максим', login: 'max_dev' },
+  { name: 'София', login: 'sofi_light' },
+  { name: 'Дмитрий', login: 'dmitry_codes' },
+  { name: 'Елена', login: 'elena_design' },
+  { name: 'Артём', login: 'artem_music' },
+  { name: 'Полина', login: 'polina_art' },
+  { name: 'Иван', login: 'ivan_wave' }
+];
+
 const $ = id => document.getElementById(id);
 const dom = {};
 
@@ -48,7 +58,7 @@ function initDom() {
     'setSidebar', 'setLanguage', 'setAutoStart',
     'setDisplayName', 'saveProfileName', 'resetProfileName',
     'setOldPass', 'setNewPass', 'savePassBtn', 'deleteAccountBtn',
-    'toastContainer'
+    'toastContainer', 'emptyStartChat'
   ];
   ids.forEach(id => { dom[id] = $(id); });
 }
@@ -61,12 +71,143 @@ function getColor(name) {
   return COLORS[Math.abs(hash) % COLORS.length];
 }
 
+function getInitials(name) { return name.charAt(0).toUpperCase(); }
+
+function formatTime(ts) {
+  return new Date(ts).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatDuration(sec) {
+  const m = Math.floor(sec / 60);
+  return `${m}:${String(sec % 60).padStart(2, '0')}`;
+}
+
+function toast(msg, type = 'info') {
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  dom.toastContainer.appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity 0.3s'; setTimeout(() => el.remove(), 300); }, 3000);
+}
+
+function generateId() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let id = '';
+  for (let i = 0; i < 6; i++) id += chars[Math.floor(Math.random() * chars.length)];
+  return id;
+}
+
+// ======================== ХРАНИЛИЩЕ ========================
+function saveAll() {
+  localStorage.setItem('neonchat_data', JSON.stringify({
+    user: state.user, chats: state.chats, messages: state.messages
+  }));
+}
+
+function loadAll() {
+  try {
+    const d = JSON.parse(localStorage.getItem('neonchat_data'));
+    if (d) { state.user = d.user; state.chats = d.chats || []; state.messages = d.messages || {}; return true; }
+  } catch {}
+  return false;
+}
+
+function saveSession(u, remember) {
+  if (remember) {
+    localStorage.setItem('neonchat_session', JSON.stringify(u));
+  } else {
+    sessionStorage.setItem('neonchat_session', JSON.stringify(u));
+  }
+}
+
+function getSession() {
+  try {
+    let s = sessionStorage.getItem('neonchat_session');
+    if (s) return JSON.parse(s);
+    s = localStorage.getItem('neonchat_session');
+    if (s) return JSON.parse(s);
+  } catch {}
+  return null;
+}
+
+function clearSession() {
+  localStorage.removeItem('neonchat_session');
+  sessionStorage.removeItem('neonchat_session');
+  localStorage.removeItem('neonchat_data');
+}
+
+// ======================== АВТОРИЗАЦИЯ ========================
+function showLoginForm() { dom.loginForm.style.display = 'block'; dom.registerForm.style.display = 'none'; }
+function showRegisterForm() { dom.loginForm.style.display = 'none'; dom.registerForm.style.display = 'block'; }
+
+function handleLogin(e) {
+  e.preventDefault();
+  const username = dom.loginUsername.value.trim();
+  const password = btoa(dom.loginPassword.value.trim());
+  if (!username || !password) { toast('Заполните поля', 'error'); return; }
+
+  const saved = loadAll();
+  if (!saved || !state.user || state.user.name !== username) {
+    toast('Пользователь не найден', 'error');
+    return;
+  }
+  if (state.user._pw !== password) {
+    toast('Неверный пароль', 'error');
+    return;
+  }
+  saveSession(state.user, dom.rememberMe.checked);
+  toast('Добро пожаловать!', 'success');
+  enterApp();
+}
+
+function handleRegister(e) {
+  e.preventDefault();
+  const name = dom.regName.value.trim();
+  const login = dom.regLogin.value.trim();
+  const email = dom.regEmail.value.trim();
+  const password = dom.regPassword.value.trim();
+  if (!name || !login || !email || !password) { toast('Заполните поля', 'error'); return; }
+  if (password.length < 4) { toast('Пароль минимум 4 символа', 'error'); return; }
+
+  if (loadAll() && state.user) {
+    toast('Аккаунт уже существует. Войдите.', 'error');
+    return;
+  }
+
+  state.user = { name, login, email, _pw: btoa(password), created: Date.now() };
+  state.chats = PRESET_USERS.map(u => ({
+    with: u.login, name: u.name, avatar: getInitials(u.name),
+    lastMessage: '', lastTime: '', online: Math.random() > 0.5
+  }));
+  state.messages = {};
+  saveAll();
+  saveSession(state.user, true);
+  toast('Аккаунт создан!', 'success');
+  enterApp();
+}
+
+function enterApp() {
+  dom.loginScreen.style.display = 'none';
+  dom.appScreen.style.display = 'flex';
+  initApp();
+}
+
+function handleLogout() {
+  clearSession();
+  state.user = null; state.chats = []; state.messages = {}; state.currentChat = null;
+  if (dom.setDisplayName) dom.setDisplayName.value = '';
+  dom.appScreen.style.display = 'none';
+  dom.loginScreen.style.display = 'flex';
+  showLoginForm();
+  dom.serverStatus.textContent = 'Войдите в аккаунт';
+  dom.serverStatus.style.color = '';
+}
+
 // ======================== НАСТРОЙКИ ========================
 function loadSettings() {
   try {
-    const saved = localStorage.getItem('neonchat_settings');
-    if (saved) state.settings = { ...SETTINGS_DEFAULTS, ...JSON.parse(saved) };
-    else state.settings = { ...SETTINGS_DEFAULTS };
+    const s = localStorage.getItem('neonchat_settings');
+    state.settings = s ? { ...SETTINGS_DEFAULTS, ...JSON.parse(s) } : { ...SETTINGS_DEFAULTS };
   } catch { state.settings = { ...SETTINGS_DEFAULTS }; }
 }
 
@@ -76,65 +217,31 @@ function saveSettings() {
 
 function applySettings() {
   const s = state.settings;
-
-  // Theme
   document.documentElement.style.setProperty('--neon-cyan', s.accentColor);
-
-  // Animations
-  document.querySelectorAll('.message, .contact-item, .emoji-item, .toast').forEach(el => {
-    el.style.animation = s.animations ? '' : 'none !important';
-  });
-
-  // Particles
-  dom.particles.style.display = s.particles ? 'block' : 'none';
-
-  // Glow
   document.documentElement.style.setProperty('--shadow-glow', s.glow ? `0 0 30px ${s.accentColor}20` : 'none');
-
-  // Font size
-  dom.messagesList.style.fontSize = s.fontSize + 'px';
-
-  // Compact
   document.documentElement.style.setProperty('--msg-padding-y', s.compact ? '6px' : '12px');
   document.documentElement.style.setProperty('--msg-padding-x', s.compact ? '10px' : '16px');
-
-  // Sidebar
+  dom.particles.style.display = s.particles ? 'block' : 'none';
+  dom.messagesList.style.fontSize = s.fontSize + 'px';
   dom.sidebar.style.display = s.sidebar ? '' : 'none';
-
-  // Enter to send
-  // Handled in event listener
-
-  // Sync toggle UI
   syncSettingsUI();
 }
 
 function syncSettingsUI() {
   const s = state.settings;
-  if (dom.setDarkTheme) dom.setDarkTheme.checked = s.darkTheme;
-  if (dom.setParticles) dom.setParticles.checked = s.particles;
-  if (dom.setGlow) dom.setGlow.checked = s.glow;
-  if (dom.setAnimations) dom.setAnimations.checked = s.animations;
-  if (dom.setMsgNotif) dom.setMsgNotif.checked = s.msgNotif;
-  if (dom.setSoundNotif) dom.setSoundNotif.checked = s.soundNotif;
-  if (dom.setPreviewNotif) dom.setPreviewNotif.checked = s.previewNotif;
-  if (dom.setDnd) dom.setDnd.checked = s.dnd;
-  if (dom.setEnterSend) dom.setEnterSend.checked = s.enterSend;
-  if (dom.setMsgTime) dom.setMsgTime.checked = s.msgTime;
-  if (dom.setFontSize) dom.setFontSize.value = s.fontSize;
-  if (dom.fontSizeVal) dom.fontSizeVal.textContent = s.fontSize;
-  if (dom.setCompact) dom.setCompact.checked = s.compact;
-  if (dom.setOnlineStatus) dom.setOnlineStatus.checked = s.onlineStatus;
-  if (dom.setReadStatus) dom.setReadStatus.checked = s.readStatus;
-  if (dom.setSoundIncoming) dom.setSoundIncoming.checked = s.soundIncoming;
-  if (dom.setSoundOutgoing) dom.setSoundOutgoing.checked = s.soundOutgoing;
-  if (dom.setSoundCall) dom.setSoundCall.checked = s.soundCall;
-  if (dom.setVolume) dom.setVolume.value = s.volume;
-  if (dom.volumeVal) dom.volumeVal.textContent = s.volume + '%';
-  if (dom.setSidebar) dom.setSidebar.checked = s.sidebar;
+  const toggle = (id, key) => { if (dom[id]) dom[id].checked = s[key]; };
+  toggle('setDarkTheme','darkTheme'); toggle('setParticles','particles');
+  toggle('setGlow','glow'); toggle('setAnimations','animations');
+  toggle('setMsgNotif','msgNotif'); toggle('setSoundNotif','soundNotif');
+  toggle('setPreviewNotif','previewNotif'); toggle('setDnd','dnd');
+  toggle('setEnterSend','enterSend'); toggle('setMsgTime','msgTime');
+  toggle('setCompact','compact'); toggle('setOnlineStatus','onlineStatus');
+  toggle('setReadStatus','readStatus'); toggle('setSoundIncoming','soundIncoming');
+  toggle('setSoundOutgoing','soundOutgoing'); toggle('setSoundCall','soundCall');
+  toggle('setSidebar','sidebar'); toggle('setAutoStart','autoStart');
+  if (dom.setFontSize) { dom.setFontSize.value = s.fontSize; dom.fontSizeVal.textContent = s.fontSize; }
+  if (dom.setVolume) { dom.setVolume.value = s.volume; dom.volumeVal.textContent = s.volume + '%'; }
   if (dom.setLanguage) dom.setLanguage.value = s.language;
-  if (dom.setAutoStart) dom.setAutoStart.checked = s.autoStart;
-
-  // Accent color
   dom.accentColors?.querySelectorAll('.color-opt').forEach(el => {
     el.classList.toggle('active', el.dataset.color === s.accentColor);
   });
@@ -147,110 +254,76 @@ function toggleSettings() {
 }
 
 function setupSettingsEvents() {
-  // Accordion
-  dom.settingsCategories.addEventListener('click', e => {
-    const header = e.target.closest('.settings-cat-header');
-    if (!header) return;
-    const cat = header.closest('.settings-cat');
-    if (!cat) return;
-    cat.classList.toggle('open');
+  dom.settingsCategories?.addEventListener('click', e => {
+    const h = e.target.closest('.settings-cat-header');
+    if (h) h.closest('.settings-cat')?.classList.toggle('open');
   });
 
-  // Toggle handler helper
   const onToggle = (id, key) => {
-    const el = dom[id];
-    if (!el) return;
-    el.addEventListener('change', () => {
-      state.settings[key] = el.checked;
-      saveSettings();
-      applySettings();
+    dom[id]?.addEventListener('change', () => {
+      state.settings[key] = dom[id].checked;
+      saveSettings(); applySettings();
     });
   };
+  onToggle('setDarkTheme','darkTheme'); onToggle('setParticles','particles');
+  onToggle('setGlow','glow'); onToggle('setAnimations','animations');
+  onToggle('setMsgNotif','msgNotif'); onToggle('setSoundNotif','soundNotif');
+  onToggle('setPreviewNotif','previewNotif'); onToggle('setDnd','dnd');
+  onToggle('setEnterSend','enterSend'); onToggle('setMsgTime','msgTime');
+  onToggle('setCompact','compact'); onToggle('setOnlineStatus','onlineStatus');
+  onToggle('setReadStatus','readStatus'); onToggle('setSoundIncoming','soundIncoming');
+  onToggle('setSoundOutgoing','soundOutgoing'); onToggle('setSoundCall','soundCall');
+  onToggle('setSidebar','sidebar'); onToggle('setAutoStart','autoStart');
 
-  onToggle('setDarkTheme', 'darkTheme');
-  onToggle('setParticles', 'particles');
-  onToggle('setGlow', 'glow');
-  onToggle('setAnimations', 'animations');
-  onToggle('setMsgNotif', 'msgNotif');
-  onToggle('setSoundNotif', 'soundNotif');
-  onToggle('setPreviewNotif', 'previewNotif');
-  onToggle('setDnd', 'dnd');
-  onToggle('setEnterSend', 'enterSend');
-  onToggle('setMsgTime', 'msgTime');
-  onToggle('setCompact', 'compact');
-  onToggle('setOnlineStatus', 'onlineStatus');
-  onToggle('setReadStatus', 'readStatus');
-  onToggle('setSoundIncoming', 'soundIncoming');
-  onToggle('setSoundOutgoing', 'soundOutgoing');
-  onToggle('setSoundCall', 'soundCall');
-  onToggle('setSidebar', 'sidebar');
-  onToggle('setAutoStart', 'autoStart');
-
-  // Sliders
-  if (dom.setFontSize) {
-    dom.setFontSize.addEventListener('input', () => {
-      state.settings.fontSize = parseInt(dom.setFontSize.value);
-      dom.fontSizeVal.textContent = dom.setFontSize.value;
-      saveSettings();
-      applySettings();
-    });
-  }
-  if (dom.setVolume) {
-    dom.setVolume.addEventListener('input', () => {
-      state.settings.volume = parseInt(dom.setVolume.value);
-      dom.volumeVal.textContent = dom.setVolume.value + '%';
-      saveSettings();
-    });
-  }
-
-  // Accent color
+  dom.setFontSize?.addEventListener('input', () => {
+    state.settings.fontSize = parseInt(dom.setFontSize.value);
+    dom.fontSizeVal.textContent = dom.setFontSize.value;
+    saveSettings(); applySettings();
+  });
+  dom.setVolume?.addEventListener('input', () => {
+    state.settings.volume = parseInt(dom.setVolume.value);
+    dom.volumeVal.textContent = dom.setVolume.value + '%';
+    saveSettings();
+  });
   dom.accentColors?.addEventListener('click', e => {
     const opt = e.target.closest('.color-opt');
     if (!opt) return;
     document.querySelectorAll('.color-opt').forEach(el => el.classList.remove('active'));
     opt.classList.add('active');
     state.settings.accentColor = opt.dataset.color;
+    saveSettings(); applySettings();
+  });
+  dom.setLanguage?.addEventListener('change', () => {
+    state.settings.language = dom.setLanguage.value;
     saveSettings();
-    applySettings();
   });
 
-  // Language
-  if (dom.setLanguage) {
-    dom.setLanguage.addEventListener('change', () => {
-      state.settings.language = dom.setLanguage.value;
-      saveSettings();
-    });
-  }
-
-  // Empty state new chat button (via delegation)
-  dom.messagesArea?.addEventListener('click', e => {
-    if (e.target.closest('#emptyStartChat')) showNewChatModal();
-  });
-
-  // Close
   dom.closeSettings?.addEventListener('click', () => { dom.settingsModal.style.display = 'none'; });
   dom.settingsModal?.addEventListener('click', e => {
     if (e.target === dom.settingsModal) dom.settingsModal.style.display = 'none';
   });
-
-  // Profile name
   dom.saveProfileName?.addEventListener('click', () => {
-    const name = dom.setDisplayName?.value.trim();
-    if (name) { toast('Имя обновлено', 'success'); }
+    const n = dom.setDisplayName?.value.trim();
+    if (n && state.user) { state.user.name = n; saveAll(); toast('Имя обновлено', 'success'); }
   });
   dom.resetProfileName?.addEventListener('click', () => {
-    if (dom.setDisplayName) dom.setDisplayName.value = state.user?.name || '';
+    if (dom.setDisplayName && state.user) dom.setDisplayName.value = state.user.name;
   });
-
-  // Password
   dom.savePassBtn?.addEventListener('click', () => {
-    toast('Смена пароля (требуется сервер)', 'info');
+    const old = dom.setOldPass?.value;
+    const nw = dom.setNewPass?.value;
+    if (!old || !nw) { toast('Заполните оба поля', 'error'); return; }
+    if (btoa(old) !== state.user?._pw) { toast('Старый пароль неверен', 'error'); return; }
+    if (nw.length < 4) { toast('Новый пароль минимум 4 символа', 'error'); return; }
+    state.user._pw = btoa(nw);
+    saveAll();
+    toast('Пароль изменён', 'success');
+    dom.setOldPass.value = ''; dom.setNewPass.value = '';
   });
-
-  // Delete account
   dom.deleteAccountBtn?.addEventListener('click', () => {
-    if (confirm('Вы уверены, что хотите удалить аккаунт?')) {
-      toast('Аккаунт удалён', 'info');
+    if (confirm('Удалить аккаунт? Все данные будут потеряны.')) {
+      clearSession();
+      location.reload();
     }
   });
 }
@@ -272,37 +345,16 @@ function createParticles() {
   }
 }
 
-function getInitials(name) {
-  return name.charAt(0).toUpperCase();
-}
-
-function formatTime(ts) {
-  const d = new Date(ts);
-  return d.toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
-}
-
-function formatDuration(sec) {
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  return `${m}:${String(s).padStart(2, '0')}`;
-}
-
-function toast(msg, type = 'info') {
-  const el = document.createElement('div');
-  el.className = `toast ${type}`;
-  el.textContent = msg;
-  dom.toastContainer.appendChild(el);
-  setTimeout(() => {
-    el.style.opacity = '0';
-    el.style.transition = 'opacity 0.3s';
-    setTimeout(() => el.remove(), 300);
-  }, 3000);
-}
-
 // ======================== ЭМОДЗИ ========================
 function buildEmojiPanel() {
+  const cats = {};
+  if (typeof NOVA_EMOJI !== 'undefined') {
+    for (const [cat, emojis] of Object.entries(NOVA_EMOJI)) {
+      cats[cat] = emojis;
+    }
+  }
   let html = '';
-  for (const [cat, emojis] of Object.entries(NOVA_EMOJI)) {
+  for (const [cat, emojis] of Object.entries(cats)) {
     html += `<div class="emoji-category-title">${cat}</div><div class="emoji-grid">`;
     emojis.forEach(e => {
       html += `<button class="emoji-item" data-emoji-id="${e.id}" title="${e.name}">${e.svg}</button>`;
@@ -310,13 +362,12 @@ function buildEmojiPanel() {
     html += '</div>';
   }
   dom.panelContent.innerHTML = html;
-
   dom.panelContent.querySelectorAll('.emoji-item').forEach(btn => {
     btn.addEventListener('click', () => {
       const id = btn.dataset.emojiId;
-      for (const emojis of Object.values(NOVA_EMOJI)) {
-        const emoji = emojis.find(e => e.id === id);
-        if (emoji) { insertEmoji(emoji); return; }
+      for (const emojis of Object.values(cats)) {
+        const e = emojis.find(x => x.id === id);
+        if (e) { insertEmoji(e); return; }
       }
     });
   });
@@ -324,29 +375,17 @@ function buildEmojiPanel() {
 
 function insertEmoji(emoji) {
   const img = document.createElement('img');
-  const svgBlob = new Blob([emoji.svg], { type: 'image/svg+xml;charset=utf-8' });
-  img.src = URL.createObjectURL(svgBlob);
-  img.className = 'emoji-inline';
-  img.alt = emoji.name;
-  img.draggable = false;
-
-  const sel = window.getSelection();
-  if (sel.getRangeAt && sel.rangeCount) {
-    const range = sel.getRangeAt(0);
-    if (dom.chatInput.contains(range.commonAncestorContainer)) {
-      range.deleteContents();
-      range.insertNode(img);
-      range.collapse(false);
-      sel.removeAllRanges();
-      sel.addRange(range);
-    } else {
-      dom.chatInput.appendChild(img);
-      dom.chatInput.appendChild(document.createTextNode('\u00A0'));
-    }
-  } else {
-    dom.chatInput.appendChild(img);
-    dom.chatInput.appendChild(document.createTextNode('\u00A0'));
-  }
+  const blob = new Blob([emoji.svg], { type: 'image/svg+xml;charset=utf-8' });
+  img.src = URL.createObjectURL(blob);
+  img.className = 'emoji-inline'; img.alt = emoji.name; img.draggable = false;
+  const s = window.getSelection();
+  if (s.getRangeAt && s.rangeCount) {
+    const r = s.getRangeAt(0);
+    if (dom.chatInput.contains(r.commonAncestorContainer)) {
+      r.deleteContents(); r.insertNode(img); r.collapse(false);
+      s.removeAllRanges(); s.addRange(r);
+    } else { dom.chatInput.appendChild(img); dom.chatInput.appendChild(document.createTextNode('\u00A0')); }
+  } else { dom.chatInput.appendChild(img); dom.chatInput.appendChild(document.createTextNode('\u00A0')); }
   dom.chatInput.dispatchEvent(new Event('input'));
 }
 
@@ -355,22 +394,17 @@ async function startVoiceRecording() {
   if (state.isRecording) return;
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    state.mediaRecorder = new MediaRecorder(stream, {
-      mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4'
-    });
-    state.audioChunks = [];
-    state.recordingSeconds = 0;
-    state.isRecording = true;
-
+    const mt = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
+    state.mediaRecorder = new MediaRecorder(stream, { mimeType: mt });
+    state.audioChunks = []; state.recordingSeconds = 0; state.isRecording = true;
     dom.voiceBtn.classList.add('recording');
     dom.voiceIcon.style.display = 'none';
     dom.voiceTimer.style.display = 'block';
-    updateVoiceTimer();
+    dom.voiceTimer.textContent = '0:00';
     state.recordingTimer = setInterval(() => {
       state.recordingSeconds++;
-      updateVoiceTimer();
+      dom.voiceTimer.textContent = formatDuration(state.recordingSeconds);
     }, 1000);
-
     state.mediaRecorder.ondataavailable = e => { if (e.data.size > 0) state.audioChunks.push(e.data); };
     state.mediaRecorder.onstop = () => {
       clearInterval(state.recordingTimer);
@@ -378,11 +412,9 @@ async function startVoiceRecording() {
       dom.voiceIcon.style.display = '';
       dom.voiceTimer.style.display = 'none';
       stream.getTracks().forEach(t => t.stop());
-
       const blob = new Blob(state.audioChunks, { type: 'audio/webm' });
       const dur = state.recordingSeconds;
       if (dur < 1) { toast('Слишком короткая запись', 'error'); return; }
-
       const reader = new FileReader();
       reader.onload = e => {
         dom.recordBtn.style.display = 'flex';
@@ -391,24 +423,16 @@ async function startVoiceRecording() {
         dom.chatInput.style.display = 'none';
         dom.recordBtn.dataset.blob = e.target.result;
         dom.recordBtn.dataset.dur = dur;
-        toast(`Запись ${formatDuration(dur)} готова к отправке`, 'info');
+        toast(`Запись ${formatDuration(dur)} готова`, 'info');
       };
       reader.readAsDataURL(blob);
     };
     state.mediaRecorder.start();
-  } catch (err) {
-    toast('Нет доступа к микрофону', 'error');
-  }
-}
-
-function updateVoiceTimer() {
-  dom.voiceTimer.textContent = formatDuration(state.recordingSeconds);
+  } catch { toast('Нет доступа к микрофону', 'error'); }
 }
 
 function stopVoiceRecording() {
-  if (state.mediaRecorder && state.mediaRecorder.state !== 'inactive') {
-    state.mediaRecorder.stop();
-  }
+  if (state.mediaRecorder && state.mediaRecorder.state !== 'inactive') state.mediaRecorder.stop();
   state.isRecording = false;
 }
 
@@ -422,129 +446,130 @@ function sendVoiceMessage() {
   const b64 = dom.recordBtn.dataset.blob;
   const dur = parseInt(dom.recordBtn.dataset.dur) || 0;
   if (!b64 || dur < 1 || !state.currentChat) return;
-
-  DB.sendMessage(state.currentChat, '[Голосовое сообщение]', 'voice', b64, dur);
+  addMessage({
+    type: 'voice', audioData: b64, duration: dur,
+    from: state.user.login, to: state.currentChat, time: Date.now(),
+    formattedTime: formatTime(Date.now())
+  });
   cancelVoiceMode();
 }
 
 // ======================== СООБЩЕНИЯ ========================
+function addMessage(msg) {
+  const other = msg.from === state.user.login ? msg.to : msg.from;
+  if (!state.messages[other]) state.messages[other] = [];
+  state.messages[other].push(msg);
+  saveAll();
+  if (state.currentChat === other) renderMessages(other);
+  // Update chat list
+  const chat = state.chats.find(c => c.with === other);
+  if (chat) {
+    chat.lastMessage = msg.type === 'voice' ? '🎤 Голосовое' : (msg.text?.replace(/<[^>]+>/g, '')?.slice(0, 30) || '');
+    chat.lastTime = msg.formattedTime || formatTime(msg.time);
+    renderChats(dom.searchInput.value);
+  }
+}
+
 function renderMessages(chatWith) {
   const msgs = state.messages[chatWith] || [];
   dom.messagesList.innerHTML = '';
-
-  if (msgs.length === 0) {
-    dom.messagesEmpty.style.display = 'block';
-    return;
-  }
+  if (msgs.length === 0) { dom.messagesEmpty.style.display = 'block'; return; }
   dom.messagesEmpty.style.display = 'none';
-
   msgs.forEach(msg => {
-    const isOutgoing = msg.from === state.user.login;
+    const isOut = msg.from === state.user.login;
     let el;
-
     if (msg.type === 'voice') {
       el = document.createElement('div');
-      el.className = `message ${isOutgoing ? 'outgoing' : 'incoming'} voice-message`;
-
-      const playBtn = document.createElement('button');
-      playBtn.className = 'voice-play-btn';
-      playBtn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16"><polygon points="8,5 19,12 8,19" fill="currentColor"/></svg>';
-      let isPlaying = false;
-      let audio = null;
-      playBtn.addEventListener('click', () => {
-        if (isPlaying && audio) { audio.pause(); audio.currentTime = 0; isPlaying = false; return; }
-        isPlaying = true;
-        audio = new Audio(msg.audioData);
-        audio.onended = () => { isPlaying = false; };
+      el.className = `message ${isOut ? 'outgoing' : 'incoming'} voice-message`;
+      const pb = document.createElement('button');
+      pb.className = 'voice-play-btn';
+      pb.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16"><polygon points="8,5 19,12 8,19" fill="currentColor"/></svg>';
+      let playing = false; let audio = null;
+      pb.addEventListener('click', () => {
+        if (playing && audio) { audio.pause(); audio.currentTime = 0; playing = false; return; }
+        playing = true; audio = new Audio(msg.audioData);
+        audio.onended = () => { playing = false; };
         audio.play();
       });
-
-      const wave = document.createElement('div');
-      wave.className = 'voice-wave';
-      for (let i = 0; i < 8; i++) {
-        const bar = document.createElement('span');
-        bar.style.height = `${6 + Math.random() * 18}px`;
-        wave.appendChild(bar);
-      }
-
-      const durEl = document.createElement('span');
-      durEl.className = 'voice-dur';
-      durEl.textContent = formatDuration(msg.duration || 0);
-
-      el.appendChild(playBtn);
-      el.appendChild(wave);
-      el.appendChild(durEl);
+      const wave = document.createElement('div'); wave.className = 'voice-wave';
+      for (let i = 0; i < 8; i++) { const b = document.createElement('span'); b.style.height = `${6 + Math.random() * 18}px`; wave.appendChild(b); }
+      const d = document.createElement('span'); d.className = 'voice-dur'; d.textContent = formatDuration(msg.duration || 0);
+      el.appendChild(pb); el.appendChild(wave); el.appendChild(d);
     } else {
       el = document.createElement('div');
-      el.className = `message ${isOutgoing ? 'outgoing' : 'incoming'}`;
+      el.className = `message ${isOut ? 'outgoing' : 'incoming'}`;
       el.innerHTML = msg.text;
     }
-
-    const time = document.createElement('div');
-    time.className = 'msg-time';
-    time.textContent = msg.formattedTime || formatTime(msg.time);
-    el.appendChild(time);
-
+    if (state.settings.msgTime !== false) {
+      const t = document.createElement('div'); t.className = 'msg-time'; t.textContent = msg.formattedTime || formatTime(msg.time);
+      el.appendChild(t);
+    }
     dom.messagesList.appendChild(el);
   });
-
   dom.messagesList.scrollTop = dom.messagesList.scrollHeight;
 }
 
 function sendTextMessage() {
   const text = dom.chatInput.innerHTML.trim();
   if (!text || text === '<br>' || !state.currentChat) return;
-  DB.sendMessage(state.currentChat, text, 'text');
+  addMessage({
+    type: 'text', text,
+    from: state.user.login, to: state.currentChat, time: Date.now(),
+    formattedTime: formatTime(Date.now())
+  });
   dom.chatInput.innerHTML = '';
+  // Simulate reply
+  if (state.currentChat && state.chats.find(c => c.with === state.currentChat)) {
+    setTimeout(() => simulateReply(state.currentChat), 1000 + Math.random() * 2500);
+  }
 }
 
-// ======================== ЧАТЫ / КОНТАКТЫ ========================
+function simulateReply(to) {
+  if (state.currentChat !== to) return;
+  const replies = ['Круто! 🔥', 'Понял, согласен', 'Отлично!', '😊', 'Да, 👍', 'Хорошо!', '✨'];
+  const text = replies[Math.floor(Math.random() * replies.length)];
+  addMessage({
+    type: 'text', text,
+    from: to, to: state.user.login, time: Date.now(),
+    formattedTime: formatTime(Date.now())
+  });
+}
+
+// ======================== ЧАТЫ ========================
 function renderChats(filter = '') {
   dom.contactsList.innerHTML = '';
-
   let chats = state.chats;
   if (filter) {
     const f = filter.toLowerCase();
     chats = chats.filter(c => c.name.toLowerCase().includes(f) || c.with.toLowerCase().includes(f));
   }
-
   if (chats.length === 0) {
+    const isFilter = !!filter;
     dom.contactsList.innerHTML = `
       <div style="text-align:center;padding:30px;">
         <div style="font-size:40px;margin-bottom:12px;opacity:0.3;">💬</div>
         <div style="color:var(--text-muted);font-size:13px;margin-bottom:16px;">
-          ${filter ? 'Ничего не найдено' : 'У вас пока нет чатов'}
+          ${isFilter ? 'Ничего не найдено' : 'У вас пока нет чатов'}
         </div>
-        <button class="settings-btn" id="emptyNewChatBtn" style="font-size:13px;padding:10px 24px;">
-          <span style="display:flex;align-items:center;gap:6px;justify-content:center;">
-            <svg width="16" height="16" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-            Новый чат
-          </span>
-        </button>
+        ${!isFilter ? '<button class="settings-btn" onclick="showNewChatModal()" style="font-size:13px;padding:10px 24px;cursor:pointer;"><span style="display:flex;align-items:center;gap:6px;justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg> Новый чат</span></button>' : ''}
       </div>`;
-    setTimeout(() => document.getElementById('emptyNewChatBtn')?.addEventListener('click', showNewChatModal), 100);
     return;
   }
-
-  chats.forEach(chat => {
+  chats.forEach((chat, i) => {
     const div = document.createElement('div');
     div.className = `contact-item ${chat.with === state.currentChat ? 'active' : ''}`;
     div.dataset.login = chat.with;
-
+    div.style.animationDelay = `${i * 0.05}s`;
     const color = getColor(chat.name);
-    const online = state.onlineUsers.has(chat.with);
+    const online = chat.online || state.onlineUsers.has(chat.with);
     div.innerHTML = `
-      <div class="contact-avatar ${online ? 'online' : ''}" style="background:${color}20;color:${color};border:2px solid ${color}40;">
-        ${chat.avatar || getInitials(chat.name)}
-      </div>
+      <div class="contact-avatar ${online ? 'online' : ''}" style="background:${color}20;color:${color};border:2px solid ${color}40;">${chat.avatar || getInitials(chat.name)}</div>
       <div class="contact-info">
         <div class="contact-name">${chat.name}</div>
         <div class="contact-id">@${chat.with}</div>
         <div class="contact-preview">${chat.lastMessage || ''}</div>
       </div>
-      <div class="contact-time">${chat.lastTime || ''}</div>
-    `;
-
+      <div class="contact-time">${chat.lastTime || ''}</div>`;
     div.addEventListener('click', () => selectChat(chat.with));
     dom.contactsList.appendChild(div);
   });
@@ -554,7 +579,6 @@ function selectChat(chatWith) {
   state.currentChat = chatWith;
   const chat = state.chats.find(c => c.with === chatWith);
   if (!chat) return;
-
   const color = getColor(chat.name);
   dom.chatAvatar.style.background = `${color}20`;
   dom.chatAvatar.style.color = color;
@@ -562,106 +586,14 @@ function selectChat(chatWith) {
   dom.chatAvatar.textContent = chat.avatar || getInitials(chat.name);
   dom.chatUserName.textContent = chat.name;
   dom.chatUserId.textContent = `@${chatWith}`;
-  dom.chatUserStatus.textContent = state.onlineUsers.has(chatWith) ? 'онлайн' : 'офлайн';
-  dom.chatUserStatus.style.color = state.onlineUsers.has(chatWith) ? 'var(--neon-green)' : 'var(--text-muted)';
-
+  dom.chatUserStatus.textContent = 'онлайн';
+  dom.chatUserStatus.style.color = 'var(--neon-green)';
   dom.chatHeader.style.display = 'flex';
   dom.chatInputArea.style.display = 'flex';
-
   if (!state.messages[chatWith]) state.messages[chatWith] = [];
   renderMessages(chatWith);
-
-  // Load messages from server
-  DB.getMessages(chatWith).then(msgs => {
-    if (msgs.length > 0) {
-      state.messages[chatWith] = msgs;
-      renderMessages(chatWith);
-    }
-  });
-
   renderChats(dom.searchInput.value);
   if (window.innerWidth <= 820) dom.sidebar.classList.remove('open');
-}
-
-function addChatToList(chatInfo) {
-  const idx = state.chats.findIndex(c => c.with === chatInfo.with);
-  if (idx >= 0) {
-    state.chats[idx] = { ...state.chats[idx], ...chatInfo };
-  } else {
-    state.chats.unshift(chatInfo);
-  }
-  renderChats(dom.searchInput.value);
-}
-
-// ======================== АВТОРИЗАЦИЯ ========================
-function showLoginForm() { dom.loginForm.style.display = 'block'; dom.registerForm.style.display = 'none'; }
-function showRegisterForm() { dom.loginForm.style.display = 'none'; dom.registerForm.style.display = 'block'; }
-
-async function handleLogin(e) {
-  e.preventDefault();
-  const loginOrEmail = dom.loginUsername.value.trim();
-  const password = dom.loginPassword.value.trim();
-  if (!loginOrEmail || !password) { toast('Заполните все поля', 'error'); return; }
-
-  setServerStatus('Вход...', '#ffdd00');
-  const res = await Auth.login(loginOrEmail, password, dom.rememberMe.checked);
-  if (res.success) {
-    state.user = res.user;
-    toast('Добро пожаловать!', 'success');
-    enterApp();
-  } else {
-    setServerStatus(res.error || 'Ошибка входа', '#ff3355');
-    toast(res.error || 'Ошибка входа', 'error');
-  }
-}
-
-async function handleRegister(e) {
-  e.preventDefault();
-  const name = dom.regName.value.trim();
-  const login = dom.regLogin.value.trim();
-  const email = dom.regEmail.value.trim();
-  const password = dom.regPassword.value.trim();
-
-  if (!name || !login || !email || !password) { toast('Заполните все поля', 'error'); return; }
-  if (password.length < 6) { toast('Пароль минимум 6 символов', 'error'); return; }
-
-  setServerStatus('Регистрация...', '#ffdd00');
-  const res = await Auth.register(name, login, email, password);
-  if (res.success) {
-    toast('Аккаунт создан! Войдите.', 'success');
-    setServerStatus('Аккаунт создан', '#00ff88');
-    showLoginForm();
-    dom.loginUsername.value = login;
-  } else {
-    setServerStatus(res.error || 'Ошибка', '#ff3355');
-    toast(res.error || 'Ошибка регистрации', 'error');
-  }
-}
-
-function setServerStatus(text, color) {
-  dom.serverStatus.textContent = text;
-  dom.serverStatus.style.color = color || 'var(--text-muted)';
-}
-
-function enterApp() {
-  dom.loginScreen.style.display = 'none';
-  dom.appScreen.style.display = 'flex';
-  initApp();
-}
-
-function handleLogout() {
-  DB.clearSession();
-  Auth.setUser(null);
-  state.user = null;
-  state.chats = [];
-  state.messages = {};
-  state.currentChat = null;
-  dom.appScreen.style.display = 'none';
-  dom.loginScreen.style.display = 'flex';
-  dom.loginUsername.value = '';
-  dom.loginPassword.value = '';
-  setServerStatus('Войдите в аккаунт', 'var(--text-muted)');
-  showLoginForm();
 }
 
 // ======================== ПОИСК / НОВЫЙ ЧАТ ========================
@@ -672,71 +604,64 @@ function showNewChatModal() {
   dom.newChatSearch.focus();
 }
 
-function closeNewChatModal() {
-  dom.newChatModal.style.display = 'none';
+function closeNewChatModal() { dom.newChatModal.style.display = 'none'; }
+
+function searchUsers(query) {
+  const q = query.toLowerCase();
+  const all = [
+    ...PRESET_USERS,
+    ...(state.chats?.map(c => ({ name: c.name, login: c.with })) || [])
+  ];
+  const seen = new Set();
+  const results = [];
+  all.forEach(u => {
+    if (u.login === state.user?.login || seen.has(u.login)) return;
+    if (u.name.toLowerCase().includes(q) || u.login.toLowerCase().includes(q)) {
+      seen.add(u.login);
+      results.push(u);
+    }
+  });
+  return results;
 }
 
-let searchTimeout;
-
 function handleSearchInput() {
-  clearTimeout(searchTimeout);
   const q = dom.newChatSearch.value.trim();
   if (q.length < 1) { dom.searchResults.innerHTML = ''; return; }
-  searchTimeout = setTimeout(async () => {
-    const results = await DB.searchUsers(q);
-    if (!results || results.length === 0) {
-      dom.searchResults.innerHTML = '<div style="color:var(--text-muted);padding:16px;text-align:center;font-size:13px;">Ничего не найдено</div>';
-      return;
-    }
-    dom.searchResults.innerHTML = '';
-    results.forEach(u => {
-      if (u.login === state.user.login) return;
-      const div = document.createElement('div');
-      div.className = 'contact-item';
-      const color = getColor(u.name);
-      const online = state.onlineUsers.has(u.login);
-      div.innerHTML = `
-        <div class="contact-avatar ${online ? 'online' : ''}" style="background:${color}20;color:${color};border:2px solid ${color}40;">${u.avatar || getInitials(u.name)}</div>
-        <div class="contact-info">
-          <div class="contact-name">${u.name}</div>
-          <div class="contact-id">@${u.login}</div>
-          <div class="contact-preview">${online ? 'онлайн' : 'офлайн'}</div>
-        </div>
-      `;
-      div.addEventListener('click', () => {
-        // Create or select chat
-        const existing = state.chats.find(c => c.with === u.login);
-        if (existing) {
-          selectChat(u.login);
-        } else {
-          const newChat = {
-            with: u.login,
-            name: u.name,
-            avatar: u.avatar || getInitials(u.name),
-            lastMessage: '',
-            lastTime: '',
-            online
-          };
-          state.chats.unshift(newChat);
-          renderChats();
-          selectChat(u.login);
-        }
-        closeNewChatModal();
-      });
-      dom.searchResults.appendChild(div);
+  const results = searchUsers(q);
+  if (results.length === 0) {
+    dom.searchResults.innerHTML = '<div style="color:var(--text-muted);padding:16px;text-align:center;font-size:13px;">Ничего не найдено</div>';
+    return;
+  }
+  dom.searchResults.innerHTML = '';
+  results.forEach(u => {
+    const div = document.createElement('div');
+    div.className = 'contact-item';
+    const color = getColor(u.name);
+    div.innerHTML = `
+      <div class="contact-avatar" style="background:${color}20;color:${color};border:2px solid ${color}40;">${getInitials(u.name)}</div>
+      <div class="contact-info">
+        <div class="contact-name">${u.name}</div>
+        <div class="contact-id">@${u.login}</div>
+      </div>`;
+    div.addEventListener('click', () => {
+      const existing = state.chats.find(c => c.with === u.login);
+      if (!existing) {
+        state.chats.unshift({ with: u.login, name: u.name, avatar: getInitials(u.name), lastMessage: '', lastTime: '', online: true });
+        saveAll();
+      }
+      selectChat(u.login);
+      closeNewChatModal();
     });
-  }, 300);
+    dom.searchResults.appendChild(div);
+  });
 }
 
 // ======================== ПАНЕЛИ И МЕНЮ ========================
 function toggleRightPanel(type = 'emoji') {
-  const isOpen = dom.rightPanel.style.display !== 'none';
-  if (isOpen) { dom.rightPanel.style.display = 'none'; return; }
+  const open = dom.rightPanel.style.display !== 'none';
+  if (open) { dom.rightPanel.style.display = 'none'; return; }
   dom.rightPanel.style.display = 'flex';
-  if (type === 'emoji') {
-    dom.panelTitle.textContent = 'Эмодзи';
-    buildEmojiPanel();
-  }
+  if (type === 'emoji') { dom.panelTitle.textContent = 'Эмодзи'; buildEmojiPanel(); }
 }
 
 function toggleMenu(x, y) {
@@ -752,156 +677,39 @@ function showProfile() {
   dom.profileAvatar.style.color = color;
   dom.profileAvatar.style.border = `2px solid ${color}40`;
   dom.profileAvatar.textContent = getInitials(state.user.name);
-  dom.profileName.textContent = state.user.name || state.user.login;
+  dom.profileName.textContent = state.user.name;
   dom.profileLogin.textContent = state.user.login;
   dom.profileEmail.textContent = state.user.email || '—';
   dom.profileStatus.textContent = 'онлайн';
   dom.profileModal.style.display = 'flex';
 }
 
-// ======================== СЕРВЕРНЫЕ СОБЫТИЯ ========================
-function initServerHandlers() {
-  DB.onMessage(data => {
-    switch (data.type) {
-
-      case '_connected':
-        setServerStatus('Подключено ✓', '#00ff88');
-        tryAutoLogin().then(ok => {
-          if (!ok) setServerStatus('Войдите в аккаунт', 'var(--text-muted)');
-        });
-        break;
-
-      case '_disconnected':
-        setServerStatus('Сервер недоступен', '#ff3355');
-        toast('Потеряно соединение с сервером', 'error');
-        break;
-
-      case 'login-res':
-        // Handled in handleLogin
-        break;
-
-      case 'users-list':
-        // Cache users
-        break;
-
-      case 'online-list':
-        state.onlineUsers = new Set(data.users || []);
-        renderChats(dom.searchInput.value);
-        break;
-
-      case 'user-status':
-        if (data.online) state.onlineUsers.add(data.login);
-        else state.onlineUsers.delete(data.login);
-
-        // Update current chat status
-        if (state.currentChat === data.login) {
-          dom.chatUserStatus.textContent = data.online ? 'онлайн' : 'офлайн';
-          dom.chatUserStatus.style.color = data.online ? 'var(--neon-green)' : 'var(--text-muted)';
-        }
-        renderChats(dom.searchInput.value);
-        break;
-
-      case 'chats-list':
-        state.chats = data.chats || [];
-        renderChats(dom.searchInput.value);
-        break;
-
-      case 'chat-update':
-        addChatToList({
-          with: data.with,
-          name: data.name,
-          avatar: data.avatar,
-          lastMessage: data.lastMessage,
-          lastTime: data.lastTime,
-          online: data.online
-        });
-        break;
-
-      case 'msgs-list':
-        if (data.with) {
-          state.messages[data.with] = data.messages || [];
-          if (state.currentChat === data.with) renderMessages(data.with);
-        }
-        break;
-
-      case 'new-msg':
-        const msg = data.msg;
-        if (!msg) break;
-        const chatKey = [msg.from, msg.to].sort().join('_');
-        const other = msg.from === state.user.login ? msg.to : msg.from;
-
-        // Add to messages
-        if (!state.messages[other]) state.messages[other] = [];
-        state.messages[other].push(msg);
-
-        if (state.currentChat === other) renderMessages(other);
-
-        // Update chat list
-        const userInfo = DB.getUser(other);
-        addChatToList({
-          with: other,
-          name: userInfo?.name || other,
-          avatar: userInfo?.avatar || getInitials(other),
-          lastMessage: msg.type === 'voice' ? '🎤 Голосовое сообщение' : (msg.text || ''),
-          lastTime: msg.formattedTime || formatTime(msg.time),
-          online: state.onlineUsers.has(other)
-        });
-        break;
-
-      case 'search-res':
-        break;
-
-      // Call signaling
-      case 'call-offer':
-      case 'call-answer':
-      case 'call-ice-candidate':
-      case 'call-end':
-      case 'call-decline':
-      case 'call-accept':
-        Calls.handleSignal(data);
-        break;
-    }
-  });
-}
-
 // ======================== ИНИЦИАЛИЗАЦИЯ ========================
 function initApp() {
   if (dom.setDisplayName) dom.setDisplayName.value = state.user?.name || '';
   buildEmojiPanel();
-
-  // Load chats
-  DB.getChats().then(chats => {
-    state.chats = chats;
-    renderChats();
-
-    if (chats.length > 0 && !state.currentChat) {
-      selectChat(chats[0].with);
-    } else if (state.currentChat) {
-      selectChat(state.currentChat);
-    }
-  });
-
-  // Update header
-  if (state.currentChat) {
-    dom.chatHeader.style.display = 'flex';
-    dom.chatInputArea.style.display = 'flex';
+  renderChats();
+  if (state.chats.length > 0 && !state.currentChat) {
+    selectChat(state.chats[0].with);
+  } else if (state.currentChat) {
+    selectChat(state.currentChat);
+    renderMessages(state.currentChat);
   }
+  dom.serverStatus.textContent = 'Подключено ✓';
+  dom.serverStatus.style.color = '#00ff88';
 }
 
 function setupEvents() {
-  // Auth
   dom.loginForm.addEventListener('submit', handleLogin);
   dom.registerForm.addEventListener('submit', handleRegister);
   dom.showRegister.addEventListener('click', showRegisterForm);
   dom.showLogin.addEventListener('click', showLoginForm);
 
-  // Chat input
   dom.sendBtn.addEventListener('click', sendTextMessage);
   dom.chatInput.addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey && state.settings.enterSend !== false) { e.preventDefault(); sendTextMessage(); }
   });
 
-  // Voice
   let pressTimer;
   dom.voiceBtn.addEventListener('mousedown', () => { pressTimer = setTimeout(startVoiceRecording, 200); });
   dom.voiceBtn.addEventListener('mouseup', () => { clearTimeout(pressTimer); if (state.isRecording) stopVoiceRecording(); });
@@ -910,18 +718,14 @@ function setupEvents() {
   dom.voiceBtn.addEventListener('touchend', e => { e.preventDefault(); clearTimeout(pressTimer); if (state.isRecording) stopVoiceRecording(); });
   dom.recordBtn.addEventListener('click', sendVoiceMessage);
 
-  // Emoji
   dom.emojiBtn.addEventListener('click', () => toggleRightPanel('emoji'));
   dom.toggleEmojiPanel.addEventListener('click', () => toggleRightPanel('emoji'));
   dom.closePanel.addEventListener('click', () => { dom.rightPanel.style.display = 'none'; });
-
-  // Search contacts sidebar
   dom.searchInput.addEventListener('input', e => renderChats(e.target.value));
 
-  // Menu
   dom.menuBtn.addEventListener('click', e => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    toggleMenu(rect.left - 80, rect.bottom + 4);
+    const r = e.currentTarget.getBoundingClientRect();
+    toggleMenu(r.left - 80, r.bottom + 4);
   });
   dom.menuToggle.addEventListener('click', () => dom.sidebar.classList.toggle('open'));
   dom.settingsBtn.addEventListener('click', toggleSettings);
@@ -934,37 +738,19 @@ function setupEvents() {
   dom.ctxSettings.addEventListener('click', () => { dom.contextMenu.style.display = 'none'; toggleSettings(); });
   dom.ctxLogout.addEventListener('click', () => { dom.contextMenu.style.display = 'none'; handleLogout(); });
 
-  // Profile modal
   dom.closeProfileModal.addEventListener('click', () => { dom.profileModal.style.display = 'none'; });
   dom.profileModal.addEventListener('click', e => { if (e.target === dom.profileModal) dom.profileModal.style.display = 'none'; });
-
-  // New chat modal
   dom.closeNewChat.addEventListener('click', closeNewChatModal);
   dom.newChatModal.addEventListener('click', e => { if (e.target === dom.newChatModal) closeNewChatModal(); });
   dom.newChatSearch.addEventListener('input', handleSearchInput);
+  dom.messagesArea?.addEventListener('click', e => {
+    if (e.target.closest('#emptyStartChat')) showNewChatModal();
+  });
 
-  // Call button
   dom.callBtn.addEventListener('click', () => {
     if (!state.currentChat) { toast('Выберите чат', 'info'); return; }
-    const chat = state.chats.find(c => c.with === state.currentChat);
-    Calls.startCall(state.currentChat, chat?.name || state.currentChat, false);
+    toast('Звонок (WebRTC) — требуется сервер', 'info');
   });
-}
-
-async function tryAutoLogin() {
-  const saved = DB.getSession();
-  if (!saved || !saved.login || !saved.password) return false;
-
-  setServerStatus('Восстановление сессии...', '#ffdd00');
-  const res = await DB.login(saved.login, saved.password);
-  if (res.success) {
-    state.user = res.user;
-    Auth.setUser(res.user, true);
-    toast('С возвращением!', 'success');
-    enterApp();
-    return true;
-  }
-  return false;
 }
 
 function init() {
@@ -974,29 +760,22 @@ function init() {
   applySettings();
   setupEvents();
   setupSettingsEvents();
-  initServerHandlers();
 
-  // Pre-fill display name if available
-  if (dom.setDisplayName) dom.setDisplayName.value = state.user?.name || '';
-
-  Calls.init(
-    (from, fromName, isVideo) => toast(`Входящий звонок от ${fromName}`, 'info'),
-    () => {}
-  );
-
-  // Show login screen with connection status
   dom.loginScreen.style.display = 'flex';
+  dom.serverStatus.textContent = 'Загрузка...';
+  dom.serverStatus.style.color = '#ffdd00';
 
-  if (DB.connected) {
-    setServerStatus('Подключено', '#00ff88');
-    tryAutoLogin().then(ok => {
-      if (!ok) {
-        dom.loginScreen.style.display = 'flex';
-        setServerStatus('Войдите в аккаунт', 'var(--text-muted)');
-      }
-    });
+  const session = getSession();
+  const dataLoaded = loadAll();
+
+  if (session && dataLoaded && state.user && session._pw === state.user._pw) {
+    dom.serverStatus.textContent = 'Автовход...';
+    setTimeout(() => { toast('С возвращением!', 'success'); enterApp(); }, 400);
+  } else if (dataLoaded && state.user) {
+    dom.serverStatus.textContent = 'Войдите в аккаунт';
   } else {
-    setServerStatus('Подключение к серверу...', '#ffdd00');
+    dom.serverStatus.textContent = 'Создайте аккаунт';
+    showRegisterForm();
   }
 }
 
