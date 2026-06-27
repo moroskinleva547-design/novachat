@@ -7,8 +7,17 @@ const DB = {
   _reconnectAttempts: 0,
   _sessionId: null,
 
-  // Try localStorage server URL override, default to localhost
-  _serverUrl: localStorage.getItem('novachat_server') || 'ws://localhost:3001',
+  // Auto-detect server URL or use localStorage override
+  _serverUrl: (function() {
+    const saved = localStorage.getItem('novachat_server');
+    if (saved) return saved;
+    // If loaded from same origin as server (e.g., http://localhost:3001)
+    const loc = window.location;
+    if (loc.port === '3001' || loc.port === '3000') {
+      return 'ws://' + loc.hostname + ':' + loc.port;
+    }
+    return 'ws://localhost:3001';
+  })(),
 
   setServerUrl(url) {
     this._serverUrl = url;
