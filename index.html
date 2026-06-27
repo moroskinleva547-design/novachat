@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NovaChat</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- ===== AUTH ===== -->
+    <div id="auth-screen">
+      <div class="auth-container">
+        <div class="auth-logo">
+          <div class="logo-icon" data-icon="logo" data-icon-size="42"></div>
+          <h1>NovaChat</h1>
+          <p>Общайся свободно</p>
+        </div>
+        <div class="auth-tabs">
+          <button class="auth-tab active" data-tab="login">Вход</button>
+          <button class="auth-tab" data-tab="register">Регистрация</button>
+        </div>
+        <form id="login-form" class="auth-form active">
+          <div class="form-group"><input type="text" id="login-email" placeholder="Логин или email" required></div>
+          <div class="form-group"><input type="password" id="login-password" placeholder="Пароль" required></div>
+          <label class="remember-me" id="remember-label">
+            <input type="checkbox" id="remember-checkbox" class="remember-checkbox-hidden">
+            <span class="remember-checkbox">
+              <span class="remember-checkbox-inner"></span>
+            </span>
+            <span class="remember-text">Запомнить меня</span>
+          </label>
+          <button type="submit" class="auth-btn">Войти</button>
+          <p class="auth-error" id="login-error"></p>
+        </form>
+        <form id="register-form" class="auth-form">
+          <div class="form-group"><input type="text" id="reg-name" placeholder="Имя пользователя" required></div>
+          <div class="form-group"><input type="text" id="reg-login" placeholder="Логин" required></div>
+          <div class="form-group"><input type="email" id="reg-email" placeholder="Email" required></div>
+          <div class="form-group"><input type="password" id="reg-password" placeholder="Пароль (мин. 6 символов)" required></div>
+          <div class="form-group"><input type="password" id="reg-confirm" placeholder="Подтвердите пароль" required></div>
+          <button type="submit" class="auth-btn">Зарегистрироваться</button>
+          <p class="auth-error" id="register-error"></p>
+        </form>
+      </div>
+    </div>
+
+    <!-- ===== MAIN ===== -->
+    <div id="main-screen" class="hidden">
+      <!-- Sidebar -->
+      <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+          <button class="icon-btn mobile-back hidden" id="mobile-back-btn" title="Назад" data-icon="back"></button>
+          <div class="user-info" id="user-info">
+            <div class="avatar" id="my-avatar">U</div>
+            <div class="user-details">
+              <span class="user-name" id="sidebar-username">User</span>
+              <span class="user-status online">В сети</span>
+            </div>
+          </div>
+          <div class="sidebar-actions">
+            <button class="icon-btn" id="new-chat-btn" title="Новый чат" data-icon="plus"></button>
+            <button class="icon-btn" id="settings-btn" title="Настройки" data-icon="settings"></button>
+            <button class="icon-btn" id="logout-btn" title="Выйти" data-icon="power"></button>
+          </div>
+        </div>
+
+        <div class="search-box">
+          <input type="text" id="search-input" placeholder="Поиск пользователей...">
+        </div>
+
+        <div class="chats-list" id="chats-list">
+          <div class="chats-header">
+            <span>Чаты</span>
+            <button class="icon-btn small" id="refresh-chats" title="Обновить" data-icon="refresh"></button>
+          </div>
+          <div id="chats-container"></div>
+        </div>
+
+        <div class="search-results hidden" id="search-results">
+          <div class="search-header">
+            <span>Результаты поиска</span>
+            <button class="icon-btn small" id="close-search" data-icon="close"></button>
+          </div>
+          <div id="search-container"></div>
+        </div>
+      </div>
+
+      <!-- Main Content -->
+      <div class="main-content">
+        <div id="welcome-screen" class="welcome-screen">
+          <div class="welcome-icon" data-icon="welcome" data-icon-size="56"></div>
+          <h2>Добро пожаловать в NovaChat</h2>
+          <p>Выберите чат для начала общения</p>
+        </div>
+
+        <div id="chat-screen" class="hidden">
+          <div class="chat-header" id="chat-header">
+            <div class="chat-user-info">
+              <div class="avatar" id="chat-avatar">U</div>
+              <div>
+                <div class="chat-username" id="chat-username">User</div>
+                <div class="chat-user-status" id="chat-user-status">в сети</div>
+              </div>
+            </div>
+            <div class="chat-actions">
+              <button class="icon-btn" id="voice-call-btn" title="Голосовой звонок" data-icon="phone"></button>
+              <button class="icon-btn" id="video-call-btn" title="Видеозвонок" data-icon="video"></button>
+            </div>
+          </div>
+
+          <div class="messages-container" id="messages-container">
+            <div class="messages-list" id="messages-list"></div>
+          </div>
+
+          <div class="emoji-picker hidden" id="emoji-picker">
+            <div class="emoji-categories" id="emoji-categories"></div>
+            <div class="emoji-grid" id="emoji-grid"></div>
+          </div>
+
+          <div class="message-input-container">
+            <button class="icon-btn" id="emoji-btn" title="Эмодзи" data-icon="emoji"></button>
+            <div class="input-wrapper">
+              <input type="text" id="message-input" placeholder="Напишите сообщение..." autocomplete="off">
+            </div>
+            <button class="icon-btn voice-btn" id="voice-msg-btn" title="Голосовое сообщение" data-icon="mic"></button>
+            <button class="icon-btn send-btn" id="send-btn" title="Отправить" data-icon="send"></button>
+          </div>
+
+          <!-- Voice Recording Bar -->
+          <div class="voice-recording-bar hidden" id="voice-recording-bar">
+            <div class="voice-recording-timer" id="voice-timer">00:00</div>
+            <div class="voice-recording-wave" id="voice-wave">
+              <span></span><span></span><span></span><span></span><span></span>
+              <span></span><span></span><span></span><span></span>
+            </div>
+            <div class="voice-recording-actions">
+              <button class="voice-cancel-btn" id="voice-cancel-btn" data-icon="close" data-icon-size="18"></button>
+              <button class="voice-send-btn" id="voice-send-btn" data-icon="send" data-icon-size="18"></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== SETTINGS ===== -->
+      <div class="settings-overlay hidden" id="settings-overlay"></div>
+      <div class="settings-panel hidden" id="settings-panel">
+        <div class="settings-header">
+          <h2>Настройки</h2>
+          <button class="settings-close-btn" id="settings-close-btn" data-icon="close"></button>
+        </div>
+        <div class="settings-tabs">
+          <button class="settings-tab active" data-stab="profile">Профиль</button>
+          <button class="settings-tab" data-stab="appearance">Тема</button>
+          <button class="settings-tab" data-stab="notifications">Уведомления</button>
+          <button class="settings-tab" data-stab="about">О нас</button>
+        </div>
+        <div class="settings-content">
+          <!-- Profile -->
+          <div class="settings-section active" id="s-profile">
+            <h3>Профиль</h3>
+            <div class="setting-item">
+              <div>
+                <div class="setting-label">Имя пользователя</div>
+                <div class="setting-desc">Ваше отображаемое имя</div>
+              </div>
+              <input class="setting-input" id="settings-name" type="text" style="width:140px">
+            </div>
+            <div class="setting-item">
+              <div>
+                <div class="setting-label">Аватар</div>
+                <div class="setting-desc">Выберите цвет аватара</div>
+              </div>
+              <div class="settings-avatar-edit">
+                <div class="settings-avatar-preview" id="settings-avatar-preview">U</div>
+              </div>
+            </div>
+            <div class="setting-item" style="flex-wrap:wrap;gap:8px">
+              <div class="color-picker-group" id="avatar-color-picker"></div>
+            </div>
+            <button class="auth-btn" id="settings-save-btn">Сохранить</button>
+          </div>
+
+          <!-- Appearance -->
+          <div class="settings-section" id="s-appearance">
+            <h3>Цвет акцента</h3>
+            <div class="setting-item" style="flex-wrap:wrap;gap:8px">
+              <div class="color-picker-group" id="accent-color-picker"></div>
+            </div>
+            <h3>Фон чата</h3>
+            <div class="setting-item">
+              <span class="setting-label">Тёмная тема</span>
+              <div class="toggle-switch active" id="dark-theme-toggle"></div>
+            </div>
+            <div class="setting-item">
+              <span class="setting-label">Компактный режим</span>
+              <div class="toggle-switch" id="compact-toggle"></div>
+            </div>
+          </div>
+
+          <!-- Notifications -->
+          <div class="settings-section" id="s-notifications">
+            <h3>Уведомления</h3>
+            <div class="setting-item">
+              <div>
+                <div class="setting-label">Звук сообщений</div>
+                <div class="setting-desc">Воспроизводить звук при новых сообщениях</div>
+              </div>
+              <div class="toggle-switch active" id="sound-toggle"></div>
+            </div>
+            <div class="setting-item">
+              <div>
+                <div class="setting-label">Уведомления о звонках</div>
+                <div class="setting-desc">Показывать уведомления о входящих звонках</div>
+              </div>
+              <div class="toggle-switch active" id="call-notif-toggle"></div>
+            </div>
+            <div class="setting-item">
+              <div>
+                <div class="setting-label">Предпросмотр сообщений</div>
+                <div class="setting-desc">Показывать текст сообщения в списке чатов</div>
+              </div>
+              <div class="toggle-switch active" id="preview-toggle"></div>
+            </div>
+          </div>
+
+          <!-- About -->
+          <div class="settings-section" id="s-about">
+            <h3>NovaChat</h3>
+            <div class="setting-item" style="flex-direction:column;align-items:flex-start;gap:4px">
+              <div class="setting-label">Версия: 2.0.0</div>
+              <div class="setting-desc">Современный мессенджер с полным функционалом</div>
+            </div>
+            <div class="setting-item" style="flex-direction:column;align-items:flex-start;gap:4px">
+              <div class="setting-label">Функции:</div>
+              <div class="setting-desc">✓ Чат в реальном времени</div>
+              <div class="setting-desc">✓ Аудио и видеозвонки (WebRTC)</div>
+              <div class="setting-desc">✓ Голосовые сообщения</div>
+              <div class="setting-desc">✓ Уникальные SVG-эмодзи</div>
+              <div class="setting-desc">✓ Поиск пользователей</div>
+              <div class="setting-desc">✓ Темы оформления</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== CALL OVERLAY ===== -->
+      <div id="call-overlay" class="hidden">
+        <div class="call-container">
+          <div class="call-video-container">
+            <video id="remote-video" autoplay playsinline></video>
+            <video id="local-video" autoplay playsinline muted></video>
+          </div>
+          <div class="call-info">
+            <div class="call-avatar large ringing" id="call-avatar">U</div>
+            <div class="call-name" id="call-name">User</div>
+            <div class="call-status" id="call-status">Звонок...</div>
+            <div class="call-duration" id="call-duration">00:00</div>
+            <div class="call-error hidden" id="call-error"></div>
+          </div>
+          <div class="call-controls">
+            <button class="call-btn" id="call-mute-btn" title="Отключить микрофон" data-icon="mic" data-icon-size="24"></button>
+            <button class="call-btn" id="call-video-toggle-btn" title="Отключить видео" data-icon="video" data-icon-size="24"></button>
+            <button class="call-btn call-end" id="call-end-btn" title="Завершить звонок" data-icon="phoneEnd" data-icon-size="26"></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== INCOMING CALL ===== -->
+      <div id="incoming-call-overlay" class="hidden">
+        <div class="incoming-call-container">
+          <div class="call-avatar large ringing" id="incoming-call-avatar">U</div>
+          <div class="call-name" id="incoming-call-name">User</div>
+          <div class="call-status" id="incoming-call-status">Входящий звонок...</div>
+          <div class="incoming-call-controls">
+            <button class="call-btn call-accept" id="call-accept-btn" title="Ответить" data-icon="phoneCall" data-icon-size="24"></button>
+            <button class="call-btn call-decline" id="call-decline-btn" title="Отклонить" data-icon="close" data-icon-size="24"></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Toast -->
+      <div class="toast-container" id="toast-container"></div>
+    </div>
+  </div>
+
+  <script src="js/db.js"></script>
+  <script src="js/icons.js"></script>
+  <script src="js/emoji.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/chat.js"></script>
+  <script src="js/search.js"></script>
+  <script src="js/calls.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
