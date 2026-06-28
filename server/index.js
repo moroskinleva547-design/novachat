@@ -4,11 +4,37 @@ const fs = require('fs');
 const path = require('path');
 
 const PORT = process.env.PORT || 3001;
+const DATA_FILE = path.join(__dirname, 'data.json');
 
-// ===== In-memory storage =====
-const users = {};
-const messages = {};
+// ===== Persistent storage =====
+let users = {};
+let messages = {};
 const onlineUsers = new Set();
+
+function loadData() {
+  try {
+    if (fs.existsSync(DATA_FILE)) {
+      const raw = fs.readFileSync(DATA_FILE, 'utf-8');
+      const data = JSON.parse(raw);
+      users = data.users || {};
+      messages = data.messages || {};
+      console.log(`Data loaded: ${Object.keys(users).length} users, ${Object.keys(messages).length} chats`);
+    }
+  } catch (e) {
+    console.error('Failed to load data:', e.message);
+  }
+}
+
+function saveData() {
+  try {
+    const data = { users, messages };
+    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+  } catch (e) {
+    console.error('Failed to save data:', e.message);
+  }
+}
+
+loadData();
 
 // ===== HTTP server (serves static files) =====
 const mimeTypes = {
@@ -104,6 +130,7 @@ wss.on('connection', (ws) => {
           registered: Date.now(),
           online: false
         };
+        saveData();
         send({ type: 'register-res', success: true });
         break;
       }
@@ -162,6 +189,7 @@ wss.on('connection', (ws) => {
         const chatKey = [currentUser, to].sort().join('_');
         if (!messages[chatKey]) messages[chatKey] = [];
         messages[chatKey].push(msg);
+        saveData();
         // Send to sender
         send({ type: 'new-msg', msg });
         // Send to recipient

@@ -1,6 +1,10 @@
-/* ============================================================
-   NeonChat — Main App (localStorage mode for GitHub Pages)
-   ============================================================ */
+const WS_URL = (() => {
+  const loc = window.location;
+  if (loc.hostname === 'localhost' || loc.hostname === '127.0.0.1') {
+    return `ws://${loc.hostname}:3001`;
+  }
+  return `wss://${loc.hostname}`;
+})();
 
 const state = {
   user: null, chats: [], messages: {},
@@ -8,7 +12,8 @@ const state = {
   isRecording: false, mediaRecorder: null, audioChunks: [],
   recordingTimer: null, recordingSeconds: 0,
   onlineUsers: new Set(),
-  settings: {}
+  settings: {},
+  ws: null, reconnectTimer: null, connected: false, wsReady: false
 };
 
 const SETTINGS_DEFAULTS = {
@@ -19,21 +24,6 @@ const SETTINGS_DEFAULTS = {
   soundIncoming: true, soundOutgoing: true, soundCall: true, volume: 80,
   sidebar: true, language: 'ru', autoStart: true
 };
-
-const USER_DIRECTORY = [
-  { name: 'Алиса', login: 'alisa_star' },
-  { name: 'Максим', login: 'max_dev' },
-  { name: 'София', login: 'sofi_light' },
-  { name: 'Дмитрий', login: 'dmitry_codes' },
-  { name: 'Елена', login: 'elena_design' },
-  { name: 'Артём', login: 'artem_music' },
-  { name: 'Полина', login: 'polina_art' },
-  { name: 'Иван', login: 'ivan_wave' },
-  { name: 'Кира', login: 'kira_neo' },
-  { name: 'Тимур', login: 'timur_dev' },
-  { name: 'Вера', login: 'vera_codes' },
-  { name: 'Олег', login: 'oleg_art' }
-];
 
 const $ = id => document.getElementById(id);
 const dom = {};
@@ -67,7 +57,6 @@ function initDom() {
   ids.forEach(id => { dom[id] = $(id); });
 }
 
-// ======================== УТИЛИТЫ ========================
 function getColor(name) {
   let hash = 0;
   for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
@@ -94,22 +83,14 @@ function toast(msg, type = 'info') {
   setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity 0.3s'; setTimeout(() => el.remove(), 300); }, 3000);
 }
 
-function generateId() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let id = '';
-  for (let i = 0; i < 6; i++) id += chars[Math.floor(Math.random() * chars.length)];
-  return id;
-}
-
-// ======================== ХРАНИЛИЩЕ ========================
+// ======================== ХРАНИЛИЩЕ (localStorage) ========================
 function saveAll() {
   try {
     localStorage.setItem('neonchat_data', JSON.stringify({
       user: state.user, chats: state.chats, messages: state.messages
     }));
   } catch (e) {
-    console.warn('localStorage quota exceeded, cleaning up old voice messages...');
-    // Clean up old voice messages to free space
+    console.warn('localStorage quota exceeded');
     for (const key of Object.keys(state.messages)) {
       state.messages[key] = state.messages[key].filter(m => m.type !== 'voice');
     }
@@ -117,58 +98,9 @@ function saveAll() {
       localStorage.setItem('neonchat_data', JSON.stringify({
         user: state.user, chats: state.chats, messages: state.messages
       }));
-      toast('Старые голосовые удалены для освобождения места', 'info');
     } catch { toast('Ошибка сохранения', 'error'); }
   }
 }
-
-// ===== IndexedDB для голосовых =====
-const IDB_NAME = 'neonchat_audio';
-const IDB_VERSION = 1;
-
-function idbOpen() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(IDB_NAME, IDB_VERSION);
-    req.onupgradeneeded = e => {
-      const db = e.target.result;
-      if (!db.objectStoreNames.contains('blobs')) {
-        db.createObjectStore('blobs', { keyPath: 'id' });
-      }
-    };
-    req.onsuccess = e => resolve(e.target.result);
-    req.onerror = e => reject(e.target.error);
-  });
-}
-
-function idbPut(id, data) {
-  return idbOpen().then(db => new Promise((resolve, reject) => {
-    const tx = db.transaction('blobs', 'readwrite');
-    tx.objectStore('blobs').put({ id, data });
-    tx.oncomplete = () => { db.close(); resolve(); };
-    tx.onerror = e => { db.close(); reject(e.target.error); };
-  }));
-}
-
-function idbGet(id) {
-  return idbOpen().then(db => new Promise((resolve, reject) => {
-    const tx = db.transaction('blobs', 'readonly');
-    const req = tx.objectStore('blobs').get(id);
-    req.onsuccess = e => { db.close(); resolve(e.target.result?.data); };
-    req.onerror = e => { db.close(); reject(e.target.error); };
-  }));
-}
-
-function idbDelete(id) {
-  return idbOpen().then(db => new Promise((resolve, reject) => {
-    const tx = db.transaction('blobs', 'readwrite');
-    tx.objectStore('blobs').delete(id);
-    tx.oncomplete = () => { db.close(); resolve(); };
-    tx.onerror = e => { db.close(); reject(e.target.error); };
-  }));
-}
-
-let _audioIdCounter = 0;
-function nextAudioId() { return 'audio_' + Date.now() + '_' + (++_audioIdCounter); }
 
 function loadAll() {
   try {
@@ -179,10 +111,11 @@ function loadAll() {
 }
 
 function saveSession(u, remember) {
+  const data = { login: u.login, name: u.name, email: u.email, _pw: u._pw };
   if (remember) {
-    localStorage.setItem('neonchat_session', JSON.stringify(u));
+    localStorage.setItem('neonchat_session', JSON.stringify(data));
   } else {
-    sessionStorage.setItem('neonchat_session', JSON.stringify(u));
+    sessionStorage.setItem('neonchat_session', JSON.stringify(data));
   }
 }
 
@@ -199,7 +132,80 @@ function getSession() {
 function clearSession() {
   localStorage.removeItem('neonchat_session');
   sessionStorage.removeItem('neonchat_session');
-  localStorage.removeItem('neonchat_data');
+}
+
+// ======================== WEBSOCKET ========================
+function connectWS() {
+  if (state.ws && (state.ws.readyState === WebSocket.OPEN || state.ws.readyState === WebSocket.CONNECTING)) return;
+  try {
+    state.ws = new WebSocket(WS_URL);
+  } catch { return; }
+  state.ws.onopen = () => {
+    state.connected = true;
+    state.wsReady = true;
+    clearTimeout(state.reconnectTimer);
+    if (state.user) {
+      sendWS({ type: 'login', loginOrEmail: state.user.login, password: state.user._pw });
+    }
+  };
+  state.ws.onclose = () => {
+    state.connected = false;
+    state.wsReady = false;
+    scheduleReconnect();
+  };
+  state.ws.onerror = () => {};
+  state.ws.onmessage = (event) => {
+    let data;
+    try { data = JSON.parse(event.data); } catch { return; }
+    handleWSMessage(data);
+  };
+}
+
+function scheduleReconnect() {
+  clearTimeout(state.reconnectTimer);
+  state.reconnectTimer = setTimeout(connectWS, 5000);
+}
+
+function sendWS(data) {
+  if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+    state.ws.send(JSON.stringify(data));
+  }
+}
+
+function handleWSMessage(data) {
+  switch (data.type) {
+    case 'new-msg': {
+      const msg = data.msg;
+      const other = msg.from === state.user.login ? msg.to : msg.from;
+      if (!state.messages[other]) state.messages[other] = [];
+      state.messages[other].push(msg);
+      saveAll();
+      if (state.currentChat === other) renderMessages(other);
+      updateChatListFromMsg(msg, other);
+      if (msg.from !== state.user.login && state.currentChat !== other) {
+        if (state.settings.msgNotif !== false && state.settings.dnd !== true) {
+          toast(`✉ ${msg.from}: ${msg.text?.replace(/<[^>]+>/g, '').slice(0, 50) || '🎤 Голосовое'}`, 'info');
+        }
+      }
+      break;
+    }
+    case 'user-status':
+      if (data.online) {
+        state.onlineUsers.add(data.login);
+      } else {
+        state.onlineUsers.delete(data.login);
+      }
+      renderChats(dom.searchInput.value);
+      if (state.currentChat === data.login) {
+        dom.chatUserStatus.textContent = data.online ? 'онлайн' : 'офлайн';
+        dom.chatUserStatus.style.color = data.online ? 'var(--neon-green)' : 'var(--text-muted)';
+      }
+      break;
+    case 'online-list':
+      state.onlineUsers = new Set(data.users || []);
+      renderChats(dom.searchInput.value);
+      break;
+  }
 }
 
 // ======================== АВТОРИЗАЦИЯ ========================
@@ -252,18 +258,21 @@ function handleRegister(e) {
 function enterApp() {
   dom.loginScreen.style.display = 'none';
   dom.appScreen.style.display = 'flex';
+  if (state.ws && state.ws.readyState === WebSocket.OPEN && state.user) {
+    sendWS({ type: 'login', loginOrEmail: state.user.login, password: state.user._pw });
+  }
   initApp();
 }
 
 function handleLogout() {
   clearSession();
   state.user = null; state.chats = []; state.messages = {}; state.currentChat = null;
-  if (dom.setDisplayName) dom.setDisplayName.value = '';
   dom.appScreen.style.display = 'none';
   dom.loginScreen.style.display = 'flex';
   showLoginForm();
   dom.serverStatus.textContent = 'Войдите в аккаунт';
   dom.serverStatus.style.color = '';
+  if (dom.setDisplayName) dom.setDisplayName.value = '';
 }
 
 // ======================== НАСТРОЙКИ ========================
@@ -385,7 +394,7 @@ function setupSettingsEvents() {
   });
   dom.deleteAccountBtn?.addEventListener('click', () => {
     if (confirm('Удалить аккаунт? Все данные будут потеряны.')) {
-      clearSession();
+      clearSession(); localStorage.removeItem('neonchat_data');
       location.reload();
     }
   });
@@ -453,6 +462,53 @@ function insertEmoji(emoji) {
 }
 
 // ======================== ГОЛОСОВЫЕ ========================
+const IDB_NAME = 'neonchat_audio';
+const IDB_VERSION = 1;
+
+function idbOpen() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, IDB_VERSION);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains('blobs')) {
+        db.createObjectStore('blobs', { keyPath: 'id' });
+      }
+    };
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+function idbPut(id, data) {
+  return idbOpen().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction('blobs', 'readwrite');
+    tx.objectStore('blobs').put({ id, data });
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = e => { db.close(); reject(e.target.error); };
+  }));
+}
+
+function idbGet(id) {
+  return idbOpen().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction('blobs', 'readonly');
+    const req = tx.objectStore('blobs').get(id);
+    req.onsuccess = e => { db.close(); resolve(e.target.result?.data); };
+    req.onerror = e => { db.close(); reject(e.target.error); };
+  }));
+}
+
+function idbDelete(id) {
+  return idbOpen().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction('blobs', 'readwrite');
+    tx.objectStore('blobs').delete(id);
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = e => { db.close(); reject(e.target.error); };
+  }));
+}
+
+let _audioIdCounter = 0;
+function nextAudioId() { return 'audio_' + Date.now() + '_' + (++_audioIdCounter); }
+
 async function startVoiceRecording() {
   if (state.isRecording) return;
   try {
@@ -478,7 +534,6 @@ async function startVoiceRecording() {
       const blob = new Blob(state.audioChunks, { type: 'audio/webm' });
       const dur = state.recordingSeconds;
       if (dur < 1) { toast('Слишком короткая запись', 'error'); return; }
-      // Store in IndexedDB
       const audioId = nextAudioId();
       try {
         await idbPut(audioId, blob);
@@ -528,7 +583,9 @@ function addMessage(msg) {
   state.messages[other].push(msg);
   saveAll();
   if (state.currentChat === other) renderMessages(other);
-  // Update chat list
+  if (state.wsReady && state.connected) {
+    sendWS({ type: 'send-msg', to: other, text: msg.text || '', type: msg.type || 'text', audioData: null, duration: msg.duration || 0 });
+  }
   const chat = state.chats.find(c => c.with === other);
   if (chat) {
     chat.lastMessage = msg.type === 'voice' ? '🎤 Голосовое' : (msg.text?.replace(/<[^>]+>/g, '')?.slice(0, 30) || '');
@@ -556,8 +613,7 @@ function renderMessages(chatWith) {
         if (playing && audio) { audio.pause(); audio.currentTime = 0; playing = false; return; }
         if (loading) return;
         if (!audio) {
-          loading = true;
-          pb.style.opacity = '0.5';
+          loading = true; pb.style.opacity = '0.5';
           try {
             const blob = await idbGet(msg.audioId);
             if (!blob) { toast('Аудио не найдено', 'error'); loading = false; pb.style.opacity = '1'; return; }
@@ -575,7 +631,9 @@ function renderMessages(chatWith) {
     } else {
       el = document.createElement('div');
       el.className = `message ${isOut ? 'outgoing' : 'incoming'}`;
-      el.innerHTML = msg.text;
+      const parsed = document.createElement('span');
+      parsed.innerHTML = msg.text;
+      el.appendChild(parsed);
     }
     if (state.settings.msgTime !== false) {
       const t = document.createElement('div'); t.className = 'msg-time'; t.textContent = msg.formattedTime || formatTime(msg.time);
@@ -595,21 +653,6 @@ function sendTextMessage() {
     formattedTime: formatTime(Date.now())
   });
   dom.chatInput.innerHTML = '';
-  // Simulate reply
-  if (state.currentChat && state.chats.find(c => c.with === state.currentChat)) {
-    setTimeout(() => simulateReply(state.currentChat), 1000 + Math.random() * 2500);
-  }
-}
-
-function simulateReply(to) {
-  if (state.currentChat !== to) return;
-  const replies = ['Круто! 🔥', 'Понял, согласен', 'Отлично!', '😊', 'Да, 👍', 'Хорошо!', '✨'];
-  const text = replies[Math.floor(Math.random() * replies.length)];
-  addMessage({
-    type: 'text', text,
-    from: to, to: state.user.login, time: Date.now(),
-    formattedTime: formatTime(Date.now())
-  });
 }
 
 // ======================== ЧАТЫ ========================
@@ -663,8 +706,9 @@ function selectChat(chatWith) {
   dom.chatAvatar.textContent = chat.avatar || getInitials(chat.name);
   dom.chatUserName.textContent = chat.name;
   dom.chatUserId.textContent = `@${chatWith}`;
-  dom.chatUserStatus.textContent = 'онлайн';
-  dom.chatUserStatus.style.color = 'var(--neon-green)';
+  const online = state.onlineUsers.has(chatWith);
+  dom.chatUserStatus.textContent = online ? 'онлайн' : 'офлайн';
+  dom.chatUserStatus.style.color = online ? 'var(--neon-green)' : 'var(--text-muted)';
   dom.chatHeader.style.display = 'flex';
   dom.chatInputArea.style.display = 'flex';
   if (!state.messages[chatWith]) state.messages[chatWith] = [];
@@ -682,24 +726,6 @@ function showNewChatModal() {
 }
 
 function closeNewChatModal() { dom.newChatModal.style.display = 'none'; }
-
-function searchUsers(query) {
-  const q = query.toLowerCase();
-  const all = [
-    ...USER_DIRECTORY,
-    ...(state.chats?.map(c => ({ name: c.name, login: c.with })) || [])
-  ];
-  const seen = new Set();
-  const results = [];
-  all.forEach(u => {
-    if (u.login === state.user?.login || seen.has(u.login)) return;
-    if (u.name.toLowerCase().includes(q) || u.login.toLowerCase().includes(q)) {
-      seen.add(u.login);
-      results.push(u);
-    }
-  });
-  return results;
-}
 
 function handleSearchInput() {
   const q = dom.newChatSearch.value.trim();
@@ -721,16 +747,52 @@ function handleSearchInput() {
         <div class="contact-id">@${u.login}</div>
       </div>`;
     div.addEventListener('click', () => {
-      const existing = state.chats.find(c => c.with === u.login);
-      if (!existing) {
-        state.chats.unshift({ with: u.login, name: u.name, avatar: getInitials(u.name), lastMessage: '', lastTime: '', online: true });
-        saveAll();
-      }
-      selectChat(u.login);
+      startChatWith(u.login, u.name);
       closeNewChatModal();
     });
     dom.searchResults.appendChild(div);
   });
+}
+
+function searchUsers(query) {
+  const q = query.toLowerCase();
+  const all = [];
+  if (state.chats) {
+    state.chats.forEach(c => {
+      if (c.with !== state.user?.login && !all.find(x => x.login === c.with)) {
+        all.push({ name: c.name, login: c.with });
+      }
+    });
+  }
+  const DATA = [
+    { name: 'Алиса', login: 'alisa_star' },
+    { name: 'Максим', login: 'max_dev' },
+    { name: 'София', login: 'sofi_light' },
+    { name: 'Дмитрий', login: 'dmitry_codes' },
+    { name: 'Елена', login: 'elena_design' },
+    { name: 'Артём', login: 'artem_music' },
+    { name: 'Полина', login: 'polina_art' },
+    { name: 'Иван', login: 'ivan_wave' },
+    { name: 'Кира', login: 'kira_neo' },
+    { name: 'Тимур', login: 'timur_dev' },
+    { name: 'Вера', login: 'vera_codes' },
+    { name: 'Олег', login: 'oleg_art' }
+  ];
+  DATA.forEach(u => {
+    if (u.login !== state.user?.login && !all.find(x => x.login === u.login)) {
+      all.push(u);
+    }
+  });
+  return all.filter(u => u.name.toLowerCase().includes(q) || u.login.toLowerCase().includes(q));
+}
+
+function startChatWith(login, name) {
+  const existing = state.chats.find(c => c.with === login);
+  if (!existing) {
+    state.chats.unshift({ with: login, name, avatar: getInitials(name), lastMessage: '', lastTime: '', online: false });
+    saveAll();
+  }
+  selectChat(login);
 }
 
 // ======================== ПАНЕЛИ И МЕНЮ ========================
@@ -772,8 +834,8 @@ function initApp() {
     selectChat(state.currentChat);
     renderMessages(state.currentChat);
   }
-  dom.serverStatus.textContent = 'Подключено ✓';
-  dom.serverStatus.style.color = '#00ff88';
+  dom.serverStatus.textContent = state.connected ? 'Подключено ✓' : 'Локальный режим';
+  dom.serverStatus.style.color = state.connected ? '#00ff88' : '#ffdd00';
 }
 
 function setupEvents() {
@@ -826,11 +888,15 @@ function setupEvents() {
 
   dom.callBtn.addEventListener('click', () => {
     if (!state.currentChat) { toast('Выберите чат', 'info'); return; }
-    toast('Звонок (WebRTC) — требуется сервер', 'info');
+    if (state.wsReady) {
+      toast('Звонок отправлен', 'info');
+      sendWS({ type: 'call-offer', to: state.currentChat });
+    } else {
+      toast('WebRTC звонки требуют сервер', 'info');
+    }
   });
 }
 
-// Clean up orphaned audio blobs on startup
 async function cleanupAudioBlobs() {
   try {
     const usedIds = new Set();
@@ -865,6 +931,8 @@ function init() {
 
   const session = getSession();
   const dataLoaded = loadAll();
+
+  connectWS();
 
   if (session && dataLoaded && state.user && session._pw === state.user._pw) {
     dom.serverStatus.textContent = 'Автовход...';
